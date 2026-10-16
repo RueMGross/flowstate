@@ -1,0 +1,319 @@
+/* FlowState Assist (optional AI features): floating panel, settings, previews of what is sent. */
+.ai-panel {
+  position: fixed;
+  right: 12px;
+  top: calc(var(--shell-top, 124px) + 8px);
+  bottom: 36px;
+  width: min(392px, calc(100vw - 24px));
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  font: 12.5px/1.4 var(--font-ui);
+}
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.ai-head b {
+  font-size: 13px;
+}
+.ai-head .ai-prov {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-body {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ai-body label.ai-l,
+.ai-set label.ai-l {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+/* settings fields one under another, each label above its input */
+.ai-set label.ai-l {
+  margin-top: 8px;
+}
+.ai-body textarea,
+.ai-set textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 64px;
+  resize: vertical;
+  font: 12px/1.4 var(--font-ui);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 5px 6px;
+}
+.ai-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ai-row .grow {
+  flex: 1;
+}
+.ai-note {
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.ai-err {
+  color: var(--danger);
+  font-size: 12px;
+}
+.ai-ok {
+  color: var(--ok);
+}
+.ai-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: var(--panel-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-sent {
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+}
+.ai-sent pre {
+  margin: 4px 0 0;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 10.5px/1.35 var(--font-mono);
+  background: var(--panel-sunk);
+  padding: 5px;
+  border-radius: 4px;
+}
+.ai-sent summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+.ai-thumbs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.ai-thumbs img {
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: zoom-in;
+  background: #fff;
+}
+.ai-thumbs img.big {
+  width: 100%;
+  height: auto;
+  cursor: zoom-out;
+}
+.ai-out {
+  white-space: pre-wrap;
+  user-select: text;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 12.5px;
+}
+.ai-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-step {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 6px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 6px;
+  align-items: center;
+}
+.ai-step.off {
+  opacity: 0.55;
+}
+.ai-step .full {
+  grid-column: 1 / -1;
+}
+.ai-step input.inp,
+.ai-step select.sel {
+  min-width: 0;
+  height: 22px;
+}
+.ai-step .ai-axes {
+  grid-column: 2 / -1;
+  display: flex;
+  gap: 4px;
+}
+.ai-step .ai-axes select {
+  flex: 1;
+}
+.ai-st {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 7px;
+  background: var(--panel-sunk);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.ai-st.done {
+  background: #dff3e4;
+  color: #1d6b31;
+}
+.ai-st.failed {
+  background: #fbe3e1;
+  color: #9b2a21;
+}
+.ai-st.preview,
+.ai-st.asking {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ai-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.ai-table td,
+.ai-table th {
+  border-bottom: 1px solid var(--line);
+  padding: 3px 3px;
+  text-align: left;
+  vertical-align: top;
+}
+.ai-table input.inp {
+  width: 100%;
+  box-sizing: border-box;
+  height: 22px;
+}
+.ai-sev {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0 5px;
+  border-radius: 3px;
+  color: #fff;
+}
+.ai-sev.high {
+  background: #c0352b;
+}
+.ai-sev.medium {
+  background: #c27a0e;
+}
+.ai-sev.low {
+  background: #6b7785;
+}
+.ai-set .ai-priv {
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--panel-alt);
+  border-radius: 6px;
+  padding: 6px 9px;
+  margin: 6px 0 0;
+}
+.ai-set .ai-priv p {
+  margin: 3px 0;
+}
+.ai-set .ai-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.ai-set .ai-seg button[aria-pressed='true'] {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: #fff;
+}
+.ai-set input.inp {
+  width: 100%;
+  box-sizing: border-box;
+}
+.ai-tb {
+  font: 600 11px/1 var(--font-ui);
+  letter-spacing: 0.02em;
+  gap: 3px;
+  width: auto !important;
+  padding: 0 7px;
+}
+.ai-tb.on {
+  color: #b9a4f2;
+}
+/* the auto gate preview requested by the assistant (PlotView) */
+.ag-pop .ag-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 320px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  font-size: 11.5px;
+  white-space: normal;
+  user-select: text;
+}
+.ag-pop .ag-ai span {
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ag-ai-badge {
+  padding: 0 5px;
+  background: #6d4bc4;
+  cursor: help;
+}
+@media (pointer: coarse) {
+  .ai-panel {
+    bottom: 46px;
+  }
+}
+/* "AI auto-analysis": groups to pick, steps to take */
+.ai-check {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ai-check input {
+  margin-top: 2px;
+}
+.ai-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+}

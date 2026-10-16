@@ -1,0 +1,33 @@
+{
+  "name": "flowstate",
+  "version": "0.9.0-beta",
+  "private": true,
+  "description": "FlowState: browser-based flow cytometry analysis (FCS import, gating, compensation, spectral unmixing, bead calibration, statistics and publication figures); runs entirely client-side.",
+  "license": "AGPL-3.0-only",
+  "author": "Rüdiger Groß <flow@nanoscale.app>",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --mode single && python3 scripts/make_artifact.py",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "immer": "^10.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "fake-indexeddb": "^6.2.5",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vite-plugin-singlefile": "^2.0.3",
+    "vitest": "^2.1.4"
+  }
+}

@@ -1,0 +1,95 @@
+/* Auto gate: tightness popover shown under a plot while an automatically detected gate is pending. */
+.ag-pop {
+  position: absolute;
+  z-index: 40;
+  width: max-content;
+  min-width: 224px;
+  max-width: 340px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  padding: 6px 8px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  font: 12px/1.3 var(--font-ui);
+  cursor: default;
+  user-select: none;
+}
+.ag-pop .ag-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ag-pop input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ag-pop .ag-end {
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+.ag-pop .ag-count {
+  flex: 1;
+  margin-right: 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ag-pop .ag-count b {
+  font-weight: 600;
+}
+.ag-pop .ag-swatch {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+/* Population tree: group- / sample-specific populations and populations that do not apply to the active sample
+   (kept here with the other gating styles; see Panels.tsx). */
+.prow .ptag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: 1px;
+  font-size: 10px;
+  line-height: 13px;
+  border-radius: 3px;
+  border: 1px solid var(--accent-line, var(--line-strong));
+  color: var(--accent, var(--text-2));
+  background: var(--accent-soft, transparent);
+}
+.prow.na .nm,
+.prow.na .sw {
+  opacity: 0.5;
+}
+.prow.na .pc {
+  color: var(--text-3);
+  font-style: italic;
+}
+.ptree-note {
+  padding: 6px 12px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.ptree-note .linkish {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}

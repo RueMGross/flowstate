@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Admin command of the FlowState lab AI proxy (installed by install.sh as /usr/local/bin/flowstate-ai).
+#   sudo flowstate-ai setkey          set the Anthropic API key (typed hidden) and restart
+#   sudo flowstate-ai add NAME        make a personal code for NAME (printed once) and restart
+#   sudo flowstate-ai remove NAME     revoke NAME's code and restart (warns when it was the last one)
+#   sudo flowstate-ai users           names and this month's requests (no codes)
+#   sudo flowstate-ai status          service, recent log lines
+#   sudo flowstate-ai test NAME       one tiny request through the proxy with NAME's code
+set -euo pipefail
+ENVF=/etc/flowstate-ai/env
+USERS=/etc/flowstate-ai/users.json
+[ "$(id -u)" = 0 ] || { echo "Run with sudo."; exit 1; }
+cmd="${1:-help}"
+# value of a setting in the env file; empty (not an error) when it is missing
+getenv() { grep -E "^$1=" "$ENVF" | head -1 | cut -d= -f2- || true; }
+
+case "$cmd" in
+  setkey)
+    read -rsp "Anthropic API key (input hidden): " KEY; echo
+    [ -n "$KEY" ] || { echo "No key entered."; exit 1; }
+    WS=""
+    if [[ "$KEY" == sk-ant-usr* ]]; then
+      echo "This is a personal (identity-linked) key: it needs the workspace it works in."
+      read -rp "Workspace ID (wrkspc_...): " WS
+    fi
+    # written by node from stdin: the key is never part of a command line (ps) or the shell history
+    printf '%s\n%s\n' "$KEY" "$WS" | node -e '
+      const fs = require("fs");
+      const [key, ws] = fs.readFileSync(0, "utf8").split("\n");
+      const f = process.argv[1];
+      let t = fs.readFileSync(f, "utf8");
+      const put = (k, v) => { const re = new RegExp("^" + k + "=.*$", "m"); t = re.test(t) ? t.replace(re, () => k + "=" + v) : t + "\n" + k + "=" + v + "\n"; };
+      put("ANTHROPIC_API_KEY", key.trim());
+      put("ANTHROPIC_WORKSPACE_ID", (ws || "").trim());
+      fs.writeFileSync(f, t);' "$ENVF"
+    unset KEY
+    systemctl restart flowstate-ai
+    sleep 1
+    systemctl is-active --quiet flowstate-ai && echo "Key set; the proxy runs." || { echo "The proxy did not start:"; journalctl -u flowstate-ai -n 20 --no-pager; exit 1; }
+    ;;
+  add)
+    NAME="${2:?usage: flowstate-ai add NAME}"
+    [[ "$NAME" =~ ^[A-Za-z0-9._-]{1,40}$ ]] || { echo "Names: letters, digits, . _ - (up to 40)."; exit 1; }
+    CODE="$(node -e 'console.log(require("crypto").randomBytes(18).toString("base64url"))')"
+    printf '%s' "$CODE" | node -e '
+      const fs = require("fs");
+      const [f, name] = process.argv.slice(1);
+      const u = JSON.parse(fs.readFileSync(f, "utf8") || "{}");
+      u[name] = fs.readFileSync(0, "utf8");
+      fs.writeFileSync(f, JSON.stringify(u, null, 2) + "\n");' "$USERS" "$NAME"
+    systemctl restart flowstate-ai || true
+    echo "Code for $NAME (give it to $NAME only; it is not shown again):"
+    echo "  $CODE"
+    ;;
+  remove)
+    NAME="${2:?usage: flowstate-ai remove NAME}"
+    # messages go to stderr; stdout is the number of codes left (-1: there was no such code)
+    LEFT="$(node -e '
+      const fs = require("fs");
+      const [f, name] = process.argv.slice(1);
+      const u = JSON.parse(fs.readFileSync(f, "utf8") || "{}");
+      if (!Object.prototype.hasOwnProperty.call(u, name)) { console.error("No code for " + name + "."); process.stdout.write("-1"); process.exit(0); }
+      delete u[name];
+      fs.writeFileSync(f, JSON.stringify(u, null, 2) + "\n");
+      console.error("Code of " + name + " revoked.");
+      process.stdout.write(String(Object.keys(u).length));' "$USERS" "$NAME")"
+    [ "$LEFT" = -1 ] && exit 0
+    systemctl restart flowstate-ai || true
+    if [ "$LEFT" = 0 ] && [ -z "$(getenv LAB_USERS)" ] && [ -z "$(getenv LAB_PASSPHRASE)" ]; then
+      if [ "$(getenv ALLOW_ANONYMOUS)" = 1 ]; then
+        echo "WARNING: that was the last code and ALLOW_ANONYMOUS=1 is set: the proxy now accepts requests WITHOUT a code"
+        echo "from the allowed origins. Add a code (sudo flowstate-ai add NAME) to close it again."
+      else
+        echo "WARNING: that was the last code: the proxy now refuses ALL requests until a code is added"
+        echo "(sudo flowstate-ai add NAME)."
+      fi
+    fi
+    ;;
+  users)
+    node -e '
+      const fs = require("fs");
+      const u = JSON.parse(fs.readFileSync(process.argv[1], "utf8") || "{}");
+      let use = {};
+      try { use = JSON.parse(fs.readFileSync(process.argv[2], "utf8")); } catch {}
+      console.log("Month " + (use.month || "-") + ", all requests: " + (use.count || 0));
+      for (const n of Object.keys(u)) console.log("  " + n + ": " + ((use.users || {})[n] || 0) + " requests");' "$USERS" "$(getenv USAGE_FILE)"
+    ;;
+  status)
+    systemctl --no-pager status flowstate-ai | head -5 || true
+    journalctl -u flowstate-ai -n 10 --no-pager || true
+    ;;
+  test)
+    NAME="${2:?usage: flowstate-ai test NAME}"
+    CODE="$(node -e 'const u = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(u[process.argv[2]] || "")' "$USERS" "$NAME")"
+    [ -n "$CODE" ] || { echo "No code for $NAME."; exit 1; }
+    ORIGIN="$(getenv ALLOWED_ORIGINS | cut -d, -f1)"
+    MODEL="$(getenv MODELS | cut -d, -f1)"
+    # the code goes to curl on stdin (printf is a shell builtin): it never appears on a command line (ps)
+    printf 'x-lab-passphrase: %s\n' "$CODE" | curl -sS -m 60 "http://127.0.0.1:$(getenv PORT)/v1/messages" -H @- -H "Origin: $ORIGIN" -H 'content-type: application/json' \
+      -d "{\"model\":\"$MODEL\",\"max_tokens\":20,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word OK.\"}]}"
+    echo
+    ;;
+  *)
+    sed -n '2,8p' "$0"
+    ;;
+esac

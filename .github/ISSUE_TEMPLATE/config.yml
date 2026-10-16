@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and feedback by e-mail
+    url: mailto:flow@nanoscale.app
+    about: For questions, or if you would rather not post publicly.

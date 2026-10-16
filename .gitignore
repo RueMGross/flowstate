@@ -1,0 +1,20 @@
+node_modules/
+# build outputs (regenerate with npx vite build / npx vite build --mode single && python3 scripts/make_artifact.py)
+dist/
+dist-single/
+artifact/
+# never commit secrets or measured data
+.env
+.env.*
+*.pem
+*.key
+server/ai-proxy/users.json
+server/ai-proxy/usage.json
+*.fcs
+*.FCS
+*.lmd
+*.LMD
+*.wsp
+*.WSP
+tests/lab_local*
+.DS_Store

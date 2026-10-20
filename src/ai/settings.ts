@@ -28,11 +28,15 @@ interface AiSettingsState extends AiPrefs, Secrets {
   forgetSecrets: () => void;
 }
 
-const PREFS = 'fs.ai.prefs';
-const SECRET = 'fs.ai.secret';
 /** A lab build can name its proxy (VITE_LAB_PROXY_URL at build time): labmates then only enter their code. */
-const LAB_PROXY_URL = ((import.meta as { env?: Record<string, string | undefined> }).env?.VITE_LAB_PROXY_URL ?? '').trim();
-export const DEFAULT_PREFS: AiPrefs = { provider: 'off', model: '', proxyUrl: LAB_PROXY_URL, allowImages: true, anonymize: true, remember: false, workspaceId: '' };
+const BUILD_ENV = (import.meta as { env?: Record<string, string | undefined> }).env;
+const LAB_PROXY_URL = (BUILD_ENV?.VITE_LAB_PROXY_URL ?? '').trim();
+/** A hosted lab build whose server already gates access (VITE_LAB_PROXY_DEFAULT=1): AI starts on the lab proxy, no code. */
+const LAB_PROXY_DEFAULT = !!LAB_PROXY_URL && BUILD_ENV?.VITE_LAB_PROXY_DEFAULT === '1';
+// a lab build keeps its settings apart: a public copy on the same site (same browser storage) never inherits them
+const PREFS = LAB_PROXY_DEFAULT ? 'fs.ai.prefs.lab' : 'fs.ai.prefs';
+const SECRET = LAB_PROXY_DEFAULT ? 'fs.ai.secret.lab' : 'fs.ai.secret';
+export const DEFAULT_PREFS: AiPrefs = { provider: LAB_PROXY_DEFAULT ? 'proxy' : 'off', model: '', proxyUrl: LAB_PROXY_URL, allowImages: true, anonymize: true, remember: false, workspaceId: '' };
 
 function read<T>(key: string): Partial<T> {
   try {

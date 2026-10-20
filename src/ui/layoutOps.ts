@@ -908,7 +908,7 @@ export function copyItems(sheetId: string, ids: string[], data?: DataTransfer | 
   if (!clipboard.length) return;
   const text = clipText(clipboard);
   if (data) data.setData('text/plain', text);
-  else navigator.clipboard?.writeText?.(text).catch(() => undefined);
+  else if (typeof navigator !== 'undefined') navigator.clipboard?.writeText?.(text).catch(() => undefined);
   useStore.getState().toast(`Copied ${clipboard.length} item${clipboard.length > 1 ? 's' : ''}`, 'info');
 }
 

@@ -298,7 +298,7 @@
     bottom: 46px;
   }
 }
-/* "AI auto-analysis": groups to pick, steps to take */
+/* "Describe experiment": groups to pick, steps to take */
 .ai-check {
   display: flex;
   gap: 6px;
@@ -316,4 +316,96 @@
   flex-direction: column;
   gap: 6px;
   font-size: 12.5px;
+}
+/* "Analyze new files": a wider panel, the file list, the disclaimer */
+.ai-panel.wide {
+  width: min(460px, calc(100vw - 24px));
+}
+.ai-files {
+  max-height: 168px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ai-files .ai-check {
+  align-items: center;
+}
+.ai-fname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-note-btn {
+  align-self: flex-start;
+}
+.ai-disclaimer {
+  border: 1px solid #f0b37e;
+  background: color-mix(in srgb, #f0b37e 14%, var(--panel));
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+/* "How do I …": example questions; the "Show me" ring and its callout (passive: clicks go through) */
+.ai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ai-chips .chip {
+  font: 11.5px/1.3 var(--font-ui);
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-alt);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.ai-chips .chip:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.help-spot {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  border: 2px solid #f59e0b;
+  border-radius: 8px;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.28), 0 0 0 9999px rgba(15, 23, 42, 0.12);
+  animation: help-pulse 1.1s ease-in-out 3;
+}
+.help-callout {
+  position: fixed;
+  z-index: 201;
+  pointer-events: none;
+  max-width: 280px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: #1f2937;
+  color: #fff;
+  font: 12px/1.4 var(--font-ui);
+  box-shadow: var(--shadow);
+}
+@keyframes help-pulse {
+  50% {
+    box-shadow: 0 0 0 9px rgba(245, 158, 11, 0.1), 0 0 0 9999px rgba(15, 23, 42, 0.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-spot {
+    animation: none;
+  }
+}
+.ai-plan > summary {
+  cursor: pointer;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.ai-plan[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }

@@ -5,10 +5,12 @@ import { aiErrorMessage, getProvider, toAiError, type AiProvider } from '../../a
 import { useAiSettings } from '../../ai/settings';
 import { useStore } from '../../state/store';
 
-export type AiView = 'experiment' | 'gate' | 'strategy' | 'markers' | 'writer' | 'check';
+export type AiView = 'help' | 'analysis' | 'experiment' | 'gate' | 'strategy' | 'markers' | 'writer' | 'check';
 
 export const AI_TITLES: Record<AiView, string> = {
-  experiment: 'AI auto-analysis',
+  help: 'How do I …',
+  analysis: 'Analyze new files',
+  experiment: 'Describe experiment',
   gate: 'Gate with AI',
   strategy: 'AI gating strategy',
   markers: 'Marker labels',

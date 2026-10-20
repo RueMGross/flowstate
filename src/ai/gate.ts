@@ -87,7 +87,7 @@ export async function askAiGate(prep: GatePrep, provider: AiProvider, signal: Ab
     images: prep.image ? [prep.image.blob] : undefined,
     tier: 'default',
     signal,
-    maxTokens: 700,
+    maxTokens: 3000,
     fresh,
   });
   const answer: AiGateAnswer = value && typeof value === 'object' && !Array.isArray(value) ? value : { found: false, rationale: 'The answer was not an object.' };

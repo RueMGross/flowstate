@@ -1,3 +1,21 @@
+# FlowState 0.10.0-beta
+
+**Download:** `flowstate-standalone.html` below (double-click to open; works offline).
+
+## New
+
+- AI > Analyze new files: a whole analysis of the files not analyzed yet, from a plan you check, comment on and can have
+  revised; attach your protocol (xlsx, docx, csv, txt) for the plate layout and the experimental context: groups,
+  AI-seeded auto gates, a gating-strategy sheet, per-sample plots, overlays, charts per group,
+  statistics tables and a drafted results text, all marked as AI-generated; one Undo removes it
+- AI > How do I …: questions about the app in your own words; "Show me" opens the ribbon tab and points at the button
+- AI auto-analysis is now called Describe experiment
+- A hosted lab copy can start with its lab proxy switched on (build with `VITE_LAB_PROXY_URL` and
+  `VITE_LAB_PROXY_DEFAULT=1`, for a server that already restricts access); its AI settings are kept apart from a public
+  copy on the same site
+- Lab proxy: `MAX_TOKENS` defaults to 16000, because the model's reasoning counts toward it and a shorter limit could
+  cut JSON answers short
+
 # FlowState 0.9.0-beta
 
 First release on GitHub. FlowState is beta software: unexpected behaviour can occur, so please verify critical results

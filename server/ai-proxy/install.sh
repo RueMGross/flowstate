@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the FlowState lab AI proxy on a Linux server with systemd and nginx (Debian / Ubuntu).
-#   sudo ./install.sh [domain] [origin]        e.g. sudo ./install.sh ai.your-lab.example https://flowstate.your-lab.example
-#   another port at the first install (8787 taken):  sudo PORT_OVERRIDE=8788 ./install.sh ...
+#   sudo ./install.sh DOMAIN ORIGIN        e.g. sudo ./install.sh ai.your-lab.example https://flowstate.your-lab.example
+#   another port at the first install (8787 taken):  sudo PORT_OVERRIDE=<free port> ./install.sh ...
 # Running it again updates ai-proxy.mjs and the admin command; settings, codes, port and nginx file are kept.
 # Until the first code is added (flowstate-ai add NAME) the proxy refuses every request.
 # Adds only its own files: /opt/flowstate-ai, /etc/flowstate-ai, /etc/systemd/system/flowstate-ai.service,
@@ -10,8 +10,9 @@
 # The API key is NOT asked here: afterwards run `sudo flowstate-ai setkey` in your own terminal (typed hidden).
 set -euo pipefail
 
-DOMAIN="${1:-ai.your-lab.example}"
-ORIGIN="${2:-https://flowstate.your-lab.example}"
+[ $# -ge 2 ] || { echo "Usage: sudo ./install.sh DOMAIN ORIGIN   (e.g. ai.your-lab.example https://flowstate.your-lab.example)"; exit 1; }
+DOMAIN="$1"
+ORIGIN="$2"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # port of the proxy on 127.0.0.1: the one set at the first install, else $PORT_OVERRIDE, else 8787
 PORT="$(grep -E '^PORT=' /etc/flowstate-ai/env 2>/dev/null | cut -d= -f2 || true)"

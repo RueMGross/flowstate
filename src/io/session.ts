@@ -315,7 +315,7 @@ async function save() {
     // ask the browser not to evict the stored files under storage pressure (the answer does not matter)
     persistAsked = true;
     try {
-      void navigator.storage?.persist?.().catch(() => undefined);
+      if (typeof navigator !== 'undefined') void navigator.storage?.persist?.().catch(() => undefined);
     } catch {
       /* not supported */
     }

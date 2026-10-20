@@ -25,6 +25,8 @@ export interface StrategyStep {
   status?: StepStatus;
   note?: string;
   popId?: string;
+  /** the user's note on this step when reviewing a plan ("do this differently") */
+  remark?: string;
 }
 
 export function strategyRequest(ws: Workspace, sampleId: string | null, goal: string): string {
@@ -86,6 +88,8 @@ export interface RunControl {
   /** the request of the current step (shown as "what was sent") */
   setPrep(p: GatePrep | null): void;
   acceptAll(): boolean;
+  /** no toast at the end (a larger AI action reports the run itself) */
+  quiet?: boolean;
 }
 
 /** codes after which the run cannot go on */
@@ -176,7 +180,7 @@ export async function runStrategy(steps: StrategyStep[], c: RunControl): Promise
     squashSince(before, 'ai');
     const after = useStore.getState().ws;
     const steps = stepsSince(before);
-    if (after !== before)
+    if (after !== before && !c.quiet)
       useStore
         .getState()
         .toast(

@@ -5,8 +5,10 @@ import { useAiSettings } from '../../ai/settings';
 import { useStore } from '../../state/store';
 import { Icon } from '../icons';
 import { AiSettingsDialog } from './AiSettings';
+import { AnalysisView } from './AnalysisView';
 import { CheckView, ExperimentView, MarkersView, WriterView } from './DocViews';
 import { GateView, StrategyView } from './GateViews';
+import { HelpView } from './HelpView';
 import { AI_TITLES, openAi, SparkIcon, useAiPanel, useProvider, type AiView } from './shared';
 import './ai.css';
 
@@ -25,6 +27,8 @@ function AiPanel({ view }: { view: AiView }) {
   const provider = useProvider();
   const close = useAiPanel((s) => s.close);
   const body: Record<AiView, ReactNode> = {
+    help: <HelpView provider={provider} />,
+    analysis: <AnalysisView provider={provider} />,
     experiment: <ExperimentView provider={provider} />,
     gate: <GateView provider={provider} />,
     strategy: <StrategyView provider={provider} />,
@@ -34,7 +38,7 @@ function AiPanel({ view }: { view: AiView }) {
   };
   // data-ag-keep: pressing in the panel does not commit a pending auto gate preview
   return (
-    <section className="ai-panel" role="dialog" aria-label={AI_TITLES[view]} data-ag-keep="" onKeyDown={(e) => e.key === 'Escape' && e.target === e.currentTarget && close()} tabIndex={-1}>
+    <section className={`ai-panel${view === 'analysis' ? ' wide' : ''}`} role="dialog" aria-label={AI_TITLES[view]} data-ag-keep="" onKeyDown={(e) => e.key === 'Escape' && e.target === e.currentTarget && close()} tabIndex={-1}>
       <div className="ai-head">
         <SparkIcon />
         <b>{AI_TITLES[view]}</b>
@@ -74,6 +78,8 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const ICONS: Record<AiView | 'settings', ReactNode> = {
+  help: <HelpIcon />,
+  analysis: <Icon.wand />,
   experiment: <Icon.eye />,
   gate: <SparkIcon />,
   strategy: <Icon.gate />,
@@ -84,6 +90,8 @@ const ICONS: Record<AiView | 'settings', ReactNode> = {
 };
 
 const TIPS: Record<AiView, string> = {
+  help: 'Ask how to do something in FlowState; the answer points at the buttons to use. Sends only your question.',
+  analysis: 'The AI reads the files not analyzed yet, proposes groups, gates, figures and tables for you to check and comment on, then gates, builds them and drafts the results',
   experiment: 'The AI reads the files (instrument, channels, tube names, plates, event counts and medians) and suggests groups, the setup and the next steps',
   gate: 'The AI finds a population (e.g. lymphocytes) on a plot; the auto gate draws it as a preview',
   strategy: 'The AI proposes a gating hierarchy for this panel; edit it, then build it step by step',
@@ -102,7 +110,11 @@ export function AiRibbonGroups() {
   const btn = (v: AiView, label: string) => <RBtn icon={ICONS[v]} label={label} title={tip(v)} on={open === v} onClick={() => void openAi(v, v === 'gate' ? sel[0] : null)} />;
   return (
     <>
-      <Group label="Start">{btn('experiment', 'AI auto-analysis')}</Group>
+      <Group label="Help">{btn('help', 'How do I…')}</Group>
+      <Group label="Start">
+        {btn('analysis', 'Analyze new files')}
+        {btn('experiment', 'Describe experiment')}
+      </Group>
       <Group label="Gate">
         {btn('gate', 'Gate with AI')}
         {btn('strategy', 'Gating strategy')}
@@ -146,5 +158,15 @@ export function AiTitleButton() {
       <SparkIcon />
       AI
     </button>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.2-2.5 3.8" />
+      <path d="M12 17.2v.1" />
+    </svg>
   );
 }

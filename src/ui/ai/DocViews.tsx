@@ -1,4 +1,4 @@
-// Marker labels, Methods & legend writer, Check analysis and AI auto-analysis.
+// Marker labels, Methods & legend writer, Check analysis and Describe experiment.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../../core/engine';
 import { prepareCheck, parseIssues, type CheckIssue, type CheckPrep } from '../../ai/check';
@@ -28,7 +28,7 @@ export function MarkersView({ provider }: { provider: AiProvider | null }) {
   const suggest = () =>
     job.run(async (signal) => {
       if (!provider) return;
-      const { value } = await completeJson(provider, { prompt, tier: 'quick', signal, maxTokens: 1500 });
+      const { value } = await completeJson(provider, { prompt, tier: 'quick', signal, maxTokens: 4000 });
       setRows(mergeMarkers(base, value));
     });
   const apply = () => {
@@ -134,7 +134,7 @@ export function WriterView({ provider }: { provider: AiProvider | null }) {
         setEdited(false);
       }
       setOut((o) => ({ ...o, [k]: '' }));
-      const r = await provider.complete({ prompt: k === 'methods' ? methodsPrompt(sum) : legendPrompt(sum), tier: 'default', signal, maxTokens: 1800, fresh: true, onText: (t) => setOut((o) => ({ ...o, [k]: t })) });
+      const r = await provider.complete({ prompt: k === 'methods' ? methodsPrompt(sum) : legendPrompt(sum), tier: 'default', signal, maxTokens: 5000, fresh: true, onText: (t) => setOut((o) => ({ ...o, [k]: t })) });
       setOut((o) => ({ ...o, [k]: r.text + (r.incomplete ? '\n[cut off: the connection closed before the answer was complete]' : r.truncated ? '\n[cut short]' : '') }));
       if (r.incomplete) job.setErr(aiErrorMessage(new AiError('incomplete')));
     });
@@ -256,7 +256,7 @@ export function CheckView({ provider }: { provider: AiProvider | null }) {
   const check = () =>
     job.run(async (signal) => {
       if (!provider || !prep || !prepCurrent(prep, provider)) return;
-      const { value } = await completeJson(provider, { prompt: prep.prompt, images: prep.images.map((i) => i.blob), tier: 'default', signal, maxTokens: 2500, fresh: true });
+      const { value } = await completeJson(provider, { prompt: prep.prompt, images: prep.images.map((i) => i.blob), tier: 'default', signal, maxTokens: 6000, fresh: true });
       setRes({ ...parseIssues(value, prep.items), sheetId });
     });
   const goTo = (id: string) => {
@@ -298,7 +298,7 @@ export function CheckView({ provider }: { provider: AiProvider | null }) {
   );
 }
 
-// ---------------------------------------------------------------- AI auto-analysis (what was measured)
+// ---------------------------------------------------------------- Describe experiment (what was measured)
 
 const GROUP_COLORS = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#17becf', '#8c564b', '#e377c2', '#bcbd22', '#7f7f7f'];
 
@@ -321,7 +321,7 @@ export function ExperimentView({ provider }: { provider: AiProvider | null }) {
   const ask = () =>
     job.run(async (signal) => {
       if (!provider || !req) return;
-      const { value } = await completeJson(provider, { prompt: req.prompt, tier: 'default', signal, maxTokens: 3000, fresh: true });
+      const { value } = await completeJson(provider, { prompt: req.prompt, tier: 'default', signal, maxTokens: 6000, fresh: true });
       const r = parseExperiment(useStore.getState().ws, req, value);
       setRes(r);
       setPick(r.groups.map(() => true));

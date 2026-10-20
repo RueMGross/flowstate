@@ -39,7 +39,7 @@ function clean(b, env, models) {
   }
   if (chars > MAX_TEXT) return [null, `prompt too long (max ${MAX_TEXT} characters)`];
   if (images > MAX_IMAGES) return [null, `too many images (max ${MAX_IMAGES})`];
-  const max_tokens = Math.min(+(env.MAX_TOKENS ?? 4096), Math.max(1, Math.floor(+b.max_tokens || 1024)));
+  const max_tokens = Math.min(+(env.MAX_TOKENS ?? 16000), Math.max(1, Math.floor(+b.max_tokens || 1024)));
   return [{ model, max_tokens, messages, stream: !!b.stream }, null, { model, chars, images }];
 }
 

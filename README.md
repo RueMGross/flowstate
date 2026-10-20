@@ -94,7 +94,13 @@ calibration; tools you do not need stay out of the way (Experiment > Setup chang
 Off by default. Each action shows exactly what will be sent before anything is sent; event data and files never leave
 the browser, and sample and file names can be hidden.
 
-- AI auto-analysis: reads what you measured and suggests groups, the setup and next steps
+- Analyze new files: the AI reads the files not analyzed yet (and, if you attach it, your protocol as Excel, Word, CSV
+  or text: plate layout, conditions, experimental details) and proposes a plan (groups, gates, figures, tables) that
+  you tick off and comment on, has it revised if you like, then gates, builds the figures and tables and drafts the
+  results. Everything it makes carries a disclaimer, and one Undo removes it all
+- How do I …: ask how to do something in your own words; the answer points at the buttons to use (sends only the
+  question)
+- Describe experiment: reads what you measured and suggests groups, the setup and next steps
 - Gate with AI, gating-strategy suggestions, marker labels from your panel
 - Drafts of methods text and figure legends, and a check of your analysis for common problems
 - Runs on a claude.ai account, your own Anthropic API key, or a lab proxy (`server/ai-proxy/`)
@@ -137,7 +143,7 @@ Questions, bug reports and ideas: [flow@nanoscale.app](mailto:flow@nanoscale.app
 
 If FlowState helps your work, please cite it (GitHub: "Cite this repository", from `CITATION.cff`):
 
-> Groß R. FlowState: browser-based flow cytometry analysis. Version 0.9.0-beta. Institute of Molecular Virology, Ulm
+> Groß R. FlowState: browser-based flow cytometry analysis. Version 0.10.0-beta. Institute of Molecular Virology, Ulm
 > University Medical Center; 2026.
 
 Methods used: Logicle display (Parks, Roederer and Moore 2006; Moore and Parks 2012), Mie scattering of spheres and

@@ -161,7 +161,7 @@ export function StrategyView({ provider }: { provider: AiProvider | null }) {
   const propose = () =>
     job.run(async (signal) => {
       if (!provider) return;
-      const { value } = await completeJson(provider, { prompt, tier: 'default', signal, maxTokens: 2500, fresh: true });
+      const { value } = await completeJson(provider, { prompt, tier: 'default', signal, maxTokens: 6000, fresh: true });
       const r = parseStrategy(useStore.getState().ws, value);
       if (!r.steps.length) throw new AiError('invalid_json', 'no steps');
       setSteps(r.steps);

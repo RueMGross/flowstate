@@ -38,7 +38,8 @@ const MONTHLY = +(env.MONTHLY_CAP ?? 3000);
 const MAX_BODY = +(env.MAX_BODY_MB ?? 8) * 1048576;
 const MAX_TEXT = +(env.MAX_PROMPT_CHARS ?? 60000);
 const MAX_IMAGES = +(env.MAX_IMAGES ?? 8);
-const MAX_TOKENS = +(env.MAX_TOKENS ?? 4096);
+// room for the model's reasoning: thinking tokens count toward max_tokens, and a JSON answer cut short is lost
+const MAX_TOKENS = +(env.MAX_TOKENS ?? 16000);
 const UPSTREAM = env.UPSTREAM ?? 'https://api.anthropic.com';
 // personal (identity-linked, sk-ant-usr-...) keys need the workspace to act in; workspace keys need nothing
 const WORKSPACE = (env.ANTHROPIC_WORKSPACE_ID ?? '').trim();

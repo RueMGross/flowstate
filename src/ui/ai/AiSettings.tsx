@@ -158,7 +158,7 @@ export function AiSettingsDialog({ payload, onClose }: { payload?: { reason?: Ai
           <p>
             <b>Privacy.</b> Something is sent only when you start an AI action, and each action shows exactly what it sends first: plot images (if allowed), channel names and marker labels (with the files' stain names, $PnS), gate names,
             event counts and statistics, compensation and calibration settings, sample names (hidden: "Sample 1, 2, …" with words such as "unstained" or "FMO") and text you type. From the FCS keywords also the instrument ($CYT) and, for
-            Methods, the FCS version. AI auto-analysis adds per-sample medians and 95th percentiles, acquisition durations (from $BTIM and $ETIM), plates and wells, whether a spillover matrix is stored, and tube names if you tick them. Never the
+            Methods, the FCS version. Describe experiment and Analyze new files add per-sample medians and 95th percentiles, acquisition durations (from $BTIM and $ETIM), plates and wells, whether a spillover matrix is stored, and tube names if you tick them. Never the
             event data themselves, the FCS files or their other keywords.
           </p>
           <p>

@@ -63,7 +63,7 @@ are kept.
 | `MODELS` | `claude-sonnet-5-5` | allowed model ids; the first is used when the request names none |
 | `RATE_PER_MINUTE` | 10 | requests per client and minute |
 | `MONTHLY_CAP` | 3000 | requests per calendar month (UTC) for everyone |
-| `MAX_BODY_MB` / `MAX_PROMPT_CHARS` / `MAX_IMAGES` / `MAX_TOKENS` | 8 / 60000 / 8 / 4096 | size limits |
+| `MAX_BODY_MB` / `MAX_PROMPT_CHARS` / `MAX_IMAGES` / `MAX_TOKENS` | 8 / 60000 / 8 / 16000 | size limits (max_tokens includes the model's reasoning, so keep it generous) |
 | `PORT` / `HOST` | 8787 / 127.0.0.1 | where to listen |
 | `TRUST_PROXY` | off | `1`: take the client address from the last `X-Forwarded-For` entry (the one the reverse proxy adds; earlier entries can be forged). Only behind a reverse proxy, with the proxy itself listening on 127.0.0.1 |
 | `USAGE_FILE` | `./ai-proxy-usage.json` | where the monthly count is kept |

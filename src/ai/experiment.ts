@@ -85,15 +85,47 @@ function summaryChannels(ws: Workspace, ids: string[], max: number): string[] {
  * cytometer (without plate number and well); otherwise only control / condition words found in them.
  */
 export function experimentRequest(ws: Workspace, opts: { names?: boolean; maxSamples?: number } = {}): { prompt: string; refs: string[]; ids: string[] } {
+  const { text, refs, ids } = experimentFacts(ws, opts);
+  const prompt = `You help a scientist start the analysis of a flow cytometry experiment in FlowState (a FlowJo-like app).
+From the file metadata and per-sample summaries below, work out what was measured: which samples are controls
+(unstained, single stains, FMOs, isotypes), reference beads (size beads such as nanoViS / ApogeeMix / Rosetta, MESF or
+rainbow beads), buffer-only or cleaning runs (PBS, water, Contrad: often very many noise events or very few events),
+and which conditions the tube names and plate positions encode (treatments, dilutions, time points, replicates).
+Say what you are unsure of. Do not invent facts.
+
+Answer with JSON only:
+{
+  "summary": "2 to 4 sentences: what the experiment is",
+  "kind": "conventional" | "nanoscale",
+  "calibrations": { "mesf": true|false, "size": true|false, "why": "one sentence" },
+  "groups": [ { "name": "short name", "role": "${ROLES.join('|')}", "samples": ["S1", "S2"] } ],
+  "steps": [ { "title": "imperative, short", "detail": "one or two sentences for this experiment", "action": "${ACTIONS.join('|')}", "goal": "for action strategy: the populations to gate" } ],
+  "questions": ["what you would ask the scientist, at most 3"]
+}
+Groups: every sample in at most one group; replicates of one condition in one group. At most 7 steps, in the order to
+do them (setup, groups, compensation, calibration, gating strategy, statistics). Nanoscale data (EVs, viruses,
+liposomes) need log scatter, buffer and detergent controls and usually scatter (size) and fluorescence (MESF)
+calibration.
+
+${text}`;
+  return { prompt, refs, ids };
+}
+
+/**
+ * What the loaded files tell, as text: instrument, channels, plates, and per sample (ref S1..Sn) name, events,
+ * acquisition time and median / 95th percentile of the most informative fluorescence channels. `ids`: only these
+ * samples (in this order); else the loaded ones. `names`: send the tube names (else only control / condition words).
+ */
+export function experimentFacts(ws: Workspace, opts: { names?: boolean; maxSamples?: number; ids?: string[] } = {}): { text: string; refs: string[]; ids: string[] } {
   const names = opts.names ?? !anon();
-  const ids = ws.samples.filter((s) => engine.has(s.id)).map((s) => s.id).slice(0, opts.maxSamples ?? 96);
+  const ids = (opts.ids ?? ws.samples.map((s) => s.id)).filter((id) => engine.has(id) && ws.samples.some((s) => s.id === id)).slice(0, opts.maxSamples ?? 96);
   const refs = ids.map((_, i) => `S${i + 1}`);
   const kwOf = (id: string) => engine.samples.get(id)!.ds.keywords;
   const cyt = [...new Set(ids.map((id) => (kwOf(id)['$CYT'] ?? '').trim()).filter(Boolean))];
   const nano = ids.some((id) => isNanoscaleData(engine.samples.get(id)!.ds));
   const first = engine.samples.get(ids[0])?.ds;
   const lines: string[] = [];
-  lines.push(`Instrument: ${cyt.join(', ') || 'not stated'}${nano ? ' (nanoscale configuration: violet side scatter)' : ''}. ${ws.samples.length} samples${ids.length < ws.samples.length ? ` (first ${ids.length} described)` : ''}.`);
+  lines.push(`Instrument: ${cyt.join(', ') || 'not stated'}${nano ? ' (nanoscale configuration: violet side scatter)' : ''}. ${ws.samples.length} samples in the workspace${ids.length < ws.samples.length ? `, ${ids.length} described here` : ''}.`);
   if (first) {
     const ch = first.channels.map((c) => (c.label && c.label !== c.name ? `${c.name} = ${c.label}` : c.name));
     lines.push(`Channels: ${ch.join('; ')}.`);
@@ -135,29 +167,7 @@ export function experimentRequest(ws: Workspace, opts: { names?: boolean; maxSam
   if (ws.derived?.length) existing.push(`calibrations / derived channels: ${ws.derived.map((d) => d.kind).join(', ')}`);
   if (existing.length) lines.push('', `Already in the analysis: ${existing.join('; ')}.`);
 
-  const prompt = `You help a scientist start the analysis of a flow cytometry experiment in FlowState (a FlowJo-like app).
-From the file metadata and per-sample summaries below, work out what was measured: which samples are controls
-(unstained, single stains, FMOs, isotypes), reference beads (size beads such as nanoViS / ApogeeMix / Rosetta, MESF or
-rainbow beads), buffer-only or cleaning runs (PBS, water, Contrad: often very many noise events or very few events),
-and which conditions the tube names and plate positions encode (treatments, dilutions, time points, replicates).
-Say what you are unsure of. Do not invent facts.
-
-Answer with JSON only:
-{
-  "summary": "2 to 4 sentences: what the experiment is",
-  "kind": "conventional" | "nanoscale",
-  "calibrations": { "mesf": true|false, "size": true|false, "why": "one sentence" },
-  "groups": [ { "name": "short name", "role": "${ROLES.join('|')}", "samples": ["S1", "S2"] } ],
-  "steps": [ { "title": "imperative, short", "detail": "one or two sentences for this experiment", "action": "${ACTIONS.join('|')}", "goal": "for action strategy: the populations to gate" } ],
-  "questions": ["what you would ask the scientist, at most 3"]
-}
-Groups: every sample in at most one group; replicates of one condition in one group. At most 7 steps, in the order to
-do them (setup, groups, compensation, calibration, gating strategy, statistics). Nanoscale data (EVs, viruses,
-liposomes) need log scatter, buffer and detergent controls and usually scatter (size) and fluorescence (MESF)
-calibration.
-
-${lines.join('\n')}`;
-  return { prompt, refs, ids };
+  return { text: lines.join('\n'), refs, ids };
 }
 
 /**

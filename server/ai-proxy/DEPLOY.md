@@ -70,3 +70,33 @@ person's name, never content. Do not use it for identifiable patient data unless
   `sudo systemctl restart flowstate-ai`).
 - Each person: `RATE_PER_MINUTE` (10) and `USER_MONTHLY_CAP`; the whole lab: `MONTHLY_CAP` and the console spend limit.
 - Usage per person this month: `/opt/flowstate-ai/usage.json`.
+
+## A hosted lab copy with the AI built in (optional)
+
+If the lab opens FlowState from your web server behind a password, the page can use the proxy without anyone entering a
+code: the web server adds the code itself, only for requests that passed the password.
+
+1. A code for the website: `sudo flowstate-ai add web`. Put it into a file only root can read, e.g.
+   `/etc/nginx/snippets/flowstate-ai-web.conf` (mode 600) with the line `proxy_set_header X-Lab-Passphrase "<code>";`.
+2. Next to the protected page (here at `/flowstate/`), a path to the proxy that checks the same login, e.g. in nginx:
+
+   ```nginx
+   location /flowstate/ai/ {
+     # the same login check as the page itself (cookie, Basic Auth ...); refuse with 401 otherwise
+     proxy_pass http://127.0.0.1:8787/;
+     proxy_http_version 1.1;
+     proxy_buffering off;
+     proxy_read_timeout 300s;
+     proxy_set_header X-Forwarded-For $remote_addr;
+     proxy_set_header Origin "https://your-site.example";   # one of ALLOWED_ORIGINS
+     include /etc/nginx/snippets/flowstate-ai-web.conf;
+   }
+   ```
+
+3. Build that copy with the proxy as its default:
+   `VITE_LAB_PROXY_URL=/flowstate/ai VITE_LAB_PROXY_DEFAULT=1 npm run build:single`, and serve
+   `artifact/flowstate-standalone.html` as the page. Its AI starts on the lab proxy; its settings are stored apart from
+   a public copy on the same site.
+
+Anyone who knows the page password can then spend the lab's budget: keep the monthly caps and the console spend limit
+set. `sudo flowstate-ai remove web` switches the website's AI off again.

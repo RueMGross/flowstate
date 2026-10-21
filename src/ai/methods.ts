@@ -171,7 +171,7 @@ export function workspaceSummary(ws: Workspace, sampleId: string | null, sheetId
   for (const t of ws.tables.slice(0, 3)) {
     if (!t.columns.length) continue;
     const grp = ws.groups.find((g) => g.id === t.sampleSet);
-    const sids = (grp ? ws.samples.filter((s) => grp.sampleIds.includes(s.id)) : ws.samples).filter((s) => engine.has(s.id)).slice(0, 16);
+    const sids = (grp ? ws.samples.filter((s) => grp.sampleIds.includes(s.id)) : ws.samples).filter((s) => engine.has(s.id) && !t.hiddenSamples?.includes(s.id)).slice(0, 16);
     const head = t.columns.map((c) => c.header || `${popName(ws, c.population)} ${STAT_LABELS[c.stat]}${c.channel ? ` ${chan(ws, c.channel)}` : ''}`);
     L.push('', anon() ? `Statistics table ${ws.tables.indexOf(t) + 1}:` : `Statistics table "${t.name}":`, `Sample | ${head.join(' | ')}`);
     for (const s of sids) L.push(`${sampleLabel(ws, s.id)} | ${t.columns.map((c) => fmt(engine.stat(ws, s.id, c))).join(' | ')}`);

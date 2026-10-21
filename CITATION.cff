@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use FlowState, please cite it as below."
 title: "FlowState: browser-based flow cytometry analysis"
 type: software
-version: 0.10.0-beta
-date-released: 2026-10-20
+version: 0.10.1-beta
+date-released: 2026-10-21
 license: AGPL-3.0-only
 repository-code: "https://github.com/RueMGross/flowstate"
 authors:

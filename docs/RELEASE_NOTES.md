@@ -1,3 +1,15 @@
+# FlowState 0.10.1-beta
+
+**Download:** `flowstate-standalone.html` below (double-click to open; works offline).
+
+## New
+
+- Statistics tables: hide single samples from a table with the × next to the sample name (for example a failed tube or
+  a control you do not want in the export); they stay in the workspace and in other tables, and come back with one click
+  below the table. Hidden samples are also left out of copies, CSV / Excel exports and charts made from the table
+- Statistics tables: remove a statistic straight from its column header (×)
+- What's new: the changes of each version, in About and from the start screen
+
 # FlowState 0.10.0-beta
 
 **Download:** `flowstate-standalone.html` below (double-click to open; works offline).

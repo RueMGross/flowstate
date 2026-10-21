@@ -2125,6 +2125,7 @@ export function removeSamples(ids: string[], opts: { quiet?: boolean } = {}) {
       if (p.scope?.samples?.some((id) => kill.has(id))) p.scope.samples = p.scope.samples.filter((id) => !kill.has(id));
     }
     for (const g of ws.groups) g.sampleIds = g.sampleIds.filter((x) => !kill.has(x));
+    for (const t of ws.tables) if (t.hiddenSamples) t.hiddenSamples = t.hiddenSamples.filter((x) => !kill.has(x));
   });
   const after = useStore.getState().ws;
   const left = after.samples;

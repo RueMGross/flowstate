@@ -534,6 +534,7 @@ export function Welcome({ actions }: { actions: WelcomeActions }) {
           </label>
           <span className="wl-sep" />
           <FootLink onClick={actions.help}>Getting started</FootLink>
+          <FootLink onClick={actions.about}>What&apos;s new</FootLink>
           <FootLink onClick={actions.about}>About and licenses</FootLink>
           <span className="wl-mail">
             Questions or feedback:{' '}

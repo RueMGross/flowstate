@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import licenseText from '../../LICENSE?raw';
 import notices from '../../THIRD_PARTY_NOTICES.md?raw';
+import releaseNotes from '../../docs/RELEASE_NOTES.md?raw';
 import { saveFile } from '../io/files';
 import { APP_AFFILIATION, APP_AUTHOR, APP_CONTACT_EMAIL, APP_COPYRIGHT, APP_LICENSE, APP_STAGE, APP_URL, APP_VERSION, NAMED_COMPANIES, contactMailto } from '../legal/meta';
 import { LogoMark } from './Logo';
@@ -77,6 +78,36 @@ export function AboutIcon() {
   );
 }
 
+/** Changes per version from docs/RELEASE_NOTES.md ("# FlowState <version>" sections, "- " items), newest first. */
+export function parseReleaseNotes(md: string): { version: string; items: string[] }[] {
+  const out: { version: string; items: string[] }[] = [];
+  for (const line of md.split(/\r?\n/)) {
+    const head = /^# FlowState (\S+)/.exec(line);
+    const cur = out[out.length - 1];
+    if (head) out.push({ version: head[1], items: [] });
+    else if (cur && line.startsWith('- ')) cur.items.push(line.slice(2).trim());
+    else if (cur && cur.items.length && /^ {2}\S/.test(line)) cur.items[cur.items.length - 1] += ` ${line.trim()}`;
+    else if (cur && !line.trim()) cur.items.push('');
+  }
+  // markdown code and bold marks are shown as plain text
+  return out.map((r) => ({ version: r.version, items: r.items.filter(Boolean).map((t) => t.replace(/[`*]/g, '')) }));
+}
+
+const RELEASES = parseReleaseNotes(releaseNotes);
+
+function ReleaseItems({ version, items }: { version: string; items: string[] }) {
+  return (
+    <div style={{ margin: '4px 0 6px' }}>
+      <div style={{ fontWeight: 600 }}>{version}</div>
+      <ul style={{ margin: '2px 0 0', paddingLeft: 18, lineHeight: 1.45 }}>
+        {items.map((t, i) => (
+          <li key={i}>{t}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const H = ({ children }: { children: string }) => <h3 style={{ margin: '14px 0 4px', fontSize: 13, fontWeight: 600 }}>{children}</h3>;
 const P = ({ children }: { children: ReactNode }) => <p style={{ margin: '0 0 6px', lineHeight: 1.45 }}>{children}</p>;
 
@@ -117,6 +148,19 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           Flow cytometry analysis in the web browser: FCS import, gating, compensation and spectral unmixing, bead calibration, statistics and
           publication figures. Reads and writes the open ISAC standards FCS 3.1 and Gating-ML 2.0.
         </P>
+        <H>What&apos;s new</H>
+        {RELEASES.slice(0, 1).map((r) => (
+          <ReleaseItems key={r.version} version={r.version} items={r.items} />
+        ))}
+        {RELEASES.length > 1 && (
+          <details style={{ margin: '0 0 6px' }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--text-2)' }}>Earlier versions</summary>
+            {RELEASES.slice(1).map((r) => (
+              <ReleaseItems key={r.version} version={r.version} items={r.items} />
+            ))}
+          </details>
+        )}
+
         <P>
           {APP_COPYRIGHT}.
           <br />

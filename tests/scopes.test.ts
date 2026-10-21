@@ -23,11 +23,12 @@ import {
   overlaySampleIds,
   pickDefaultChannels,
   pickMfiChannel,
+  removeSamples,
   savedUiOf,
   scaleMismatches,
   useStore,
 } from '../src/state/store';
-import { createMfiTable, mfiTablePlan, tableMatrix } from '../src/ui/TablesView';
+import { createMfiTable, mfiTablePlan, tableMatrix, tableSamples } from '../src/ui/TablesView';
 import { populationPlotSpec } from '../src/ui/layoutOps';
 
 function ds(names: string[], cols: number[][]): FcsDataset {
@@ -151,6 +152,26 @@ describe('tables, scope operations and Gating-ML', () => {
     expect(rows[1][1]).toBeNull();
     expect(rows[2][1]).toBeNull();
     expect(rows[2][2]).toBe(engine.count(ws, 'cy', 'cellsC'));
+  });
+
+  it('samples hidden from a table leave its rows only; saved with the workspace, dropped when the sample is removed', () => {
+    const { ws, eng } = mixed();
+    reset(ws, eng);
+    useStore.getState().update((w) => {
+      w.tables.push({ id: 't', name: 'T', sampleSet: 'all', hiddenSamples: ['bd2'], columns: [{ id: 'b', population: 'cells', stat: 'count' }] });
+    });
+    let w = useStore.getState().ws;
+    expect(tableMatrix(w, w.tables[0]).rows.map((r) => r[0])).toEqual(['bd1', 'cy']);
+    expect(w.samples.map((s) => s.id)).toContain('bd2');
+    expect(parseWorkspace(serializeWorkspace(w)).tables[0].hiddenSamples).toEqual(['bd2']);
+    // a damaged list is dropped on load (all rows shown)
+    const bad = JSON.parse(serializeWorkspace(w));
+    bad.tables[0].hiddenSamples = [3];
+    expect(parseWorkspace(JSON.stringify(bad)).tables[0].hiddenSamples).toBeUndefined();
+    removeSamples(['bd2'], { quiet: true });
+    w = useStore.getState().ws;
+    expect(w.tables[0].hiddenSamples).toEqual([]);
+    expect(tableSamples(w, w.tables[0]).map((s) => s.id)).toEqual(['bd1', 'cy']);
   });
 
   it('Apply to sets the scope of all regions of a quadrant gate; Copy gates to group narrows the original', () => {

@@ -927,6 +927,7 @@ export function repairWorkspace(obj: unknown): { ws: Workspace; notes: string[] 
         cols += c0.length - c1.length;
       }
       if (!isName(t.sampleSet)) t.sampleSet = 'all';
+      if (t.hiddenSamples !== undefined && !(Array.isArray(t.hiddenSamples) && t.hiddenSamples.every(isStr))) delete t.hiddenSamples;
       return true;
     });
     if (cols) notes.add('stat-removed', (n) => `${n} ${plural(n, 'statistic', 'statistics')} of missing gates ${plural(n, 'was', 'were')} removed`, cols);

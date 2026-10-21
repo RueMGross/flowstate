@@ -427,6 +427,7 @@ export interface TableDef {
   name: string;
   columns: StatColumn[];
   sampleSet: 'all' | string; // group id
+  hiddenSamples?: string[]; // sample ids left out of this table's rows
 }
 
 export interface PlotStyleDefaults {

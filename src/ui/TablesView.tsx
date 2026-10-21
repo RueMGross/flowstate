@@ -21,9 +21,14 @@ export function colHeader(ws: Workspace, c: StatColumn): { main: string; sub: st
   return { main: c.header || `${pop.split(' / ').pop()}`, sub: `${stat}${ch}` };
 }
 
-/** Loaded samples in a table's rows. */
-export function tableSamples(ws: Workspace, t: TableDef) {
+/** Loaded samples of a table's sample set, including those hidden from its rows. */
+export function tableSetSamples(ws: Workspace, t: TableDef) {
   return ws.samples.filter((s) => engine.has(s.id) && (t.sampleSet === 'all' || ws.groups.find((g) => g.id === t.sampleSet)?.sampleIds.includes(s.id)));
+}
+
+/** Loaded samples in a table's rows (the sample set without the samples hidden from the table). */
+export function tableSamples(ws: Workspace, t: TableDef) {
+  return tableSetSamples(ws, t).filter((s) => !t.hiddenSamples?.includes(s.id));
 }
 
 /**
@@ -299,6 +304,16 @@ export function TablesView() {
     }
   };
   const tblSampleIds = tableSamples(ws, table).map((s) => s.id);
+  // samples of the set hidden from the rows (only in this table; the samples stay in the workspace)
+  const hidden = tableSetSamples(ws, table).filter((s) => table.hiddenSamples?.includes(s.id));
+  const hideSample = (id: string) => upT((t) => {
+    t.hiddenSamples = [...(t.hiddenSamples ?? []).filter((x) => x !== id), id];
+  });
+  const showSamples = (ids: string[] | null) => upT((t) => {
+    const keep = ids ? (t.hiddenSamples ?? []).filter((x) => !ids.includes(x)) : [];
+    if (keep.length) t.hiddenSamples = keep;
+    else delete t.hiddenSamples;
+  });
   // channel statistics: per population, the marker it is gated on, else a fluorescence channel the table's samples have
   const addCols = (stat: StatKind, mfi = false) =>
     upT((t) => {
@@ -342,7 +357,9 @@ export function TablesView() {
               t.sampleSet = v;
             })} />
           </div>
-          <span className="hint">{rows.length} samples × {table.columns.length} statistics</span>
+          <span className="hint">
+            {rows.length} samples × {table.columns.length} statistics{hidden.length ? ` (${hidden.length} hidden)` : ''}
+          </span>
           <span style={{ flex: 1 }} />
           <button className="btn sm" onClick={copyTsv}>
             <Icon.copy /> Copy
@@ -374,9 +391,14 @@ export function TablesView() {
                 {table.columns.map((c) => {
                   const h = colHeader(ws, c);
                   return (
-                    <th key={c.id}>
+                    <th key={c.id} className="tbl-col">
                       {h.main}
                       <span className="sub">{h.sub}</span>
+                      <button className="icon-btn danger tbl-x" aria-label="Remove column" title="Remove this statistic from the table" onClick={() => upT((t) => {
+                        t.columns = t.columns.filter((x) => x.id !== c.id);
+                      })}>
+                        <Icon.close />
+                      </button>
                     </th>
                   );
                 })}
@@ -384,7 +406,7 @@ export function TablesView() {
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i}>
+                <tr key={rowIds[i]} className="tbl-row">
                   {r.map((v, j) => {
                     const note = j > 0 && v !== null ? notes[i]?.[j - 1] : null;
                     const rnote = j > 0 ? rangeNotes[i]?.[j - 1] : null;
@@ -392,6 +414,11 @@ export function TablesView() {
                     const tip = [note, rnote].filter(Boolean).join('\n');
                     return (
                       <td key={j} className={j === 0 ? 'left' : ''} title={na ? `Not applicable: ${na}` : tip || undefined} style={na ? { color: 'var(--text-3)', fontStyle: 'italic' } : undefined}>
+                        {j === 0 && (
+                          <button className="icon-btn tbl-x" aria-label="Hide sample" title="Hide this sample from the table (it stays in the workspace; show it again below the table)" onClick={() => hideSample(rowIds[i])}>
+                            <Icon.close />
+                          </button>
+                        )}
                         {v === null ? 'n/a' : typeof v === 'number' ? formatStat(v, table.columns[j - 1].stat) : v}
                         {note && (
                           <sup className="tbl-note" aria-label="based on fewer events" style={{ color: 'var(--text-3)', marginLeft: 1 }}>
@@ -411,12 +438,27 @@ export function TablesView() {
               {!rows.length && (
                 <tr>
                   <td className="left" colSpan={table.columns.length + 1} style={{ color: 'var(--text-3)' }}>
-                    No loaded samples.
+                    {hidden.length ? 'All samples are hidden.' : 'No loaded samples.'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          {hidden.length > 0 && (
+            <div className="row" style={{ marginTop: 8, gap: 6 }}>
+              <span className="hint">Hidden from this table:</span>
+              {hidden.map((s) => (
+                <button key={s.id} className="btn sm" title="Show this sample in the table again" onClick={() => showSamples([s.id])}>
+                  {s.name} <Icon.plus />
+                </button>
+              ))}
+              {hidden.length > 1 && (
+                <button className="btn sm" onClick={() => showSamples(null)}>
+                  Show all
+                </button>
+              )}
+            </div>
+          )}
           {anyNote && (
             <p className="hint" style={{ margin: '6px 0 0' }}>
               * Based on fewer events than the population has: some events have no value in this channel (e.g. outside a calibrated range). Hover the value for the counts.

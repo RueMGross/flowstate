@@ -143,7 +143,7 @@ Questions, bug reports and ideas: [flow@nanoscale.app](mailto:flow@nanoscale.app
 
 If FlowState helps your work, please cite it (GitHub: "Cite this repository", from `CITATION.cff`):
 
-> Groß R. FlowState: browser-based flow cytometry analysis. Version 0.10.1-beta. Institute of Molecular Virology, Ulm
+> Groß R. FlowState: browser-based flow cytometry analysis. Version 0.10.2-beta. Institute of Molecular Virology, Ulm
 > University Medical Center; 2026.
 
 Methods used: Logicle display (Parks, Roederer and Moore 2006; Moore and Parks 2012), Mie scattering of spheres and

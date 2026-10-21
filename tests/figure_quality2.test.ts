@@ -2,7 +2,7 @@
 // their items, events without a value, equal-gap grids, nudging, repeat headers, title modes, slide sizes, exports.
 import { DEMO_SAMPLES, makeDemoDataset } from '../src/core/demo';
 import { Engine } from '../src/core/engine';
-import { defaultPlotOptions, emptyWorkspace, MM, type GateGeom, type PlotItem, type TextItem, type Workspace } from '../src/core/model';
+import { defaultPlotOptions, emptyWorkspace, MM, type GateGeom, type PlotItem, type Population, type TextItem, type Workspace } from '../src/core/model';
 import { defaultScaleFor, makeScale } from '../src/core/transforms';
 import { layoutLabels, overlapArea, type Box } from '../src/render/labels';
 import { drawableEvents, omittedEvents, plotTitleText, renderPlot, type RenderEnv } from '../src/render/plot';
@@ -300,3 +300,30 @@ describe('calibration panels', () => {
 });
 
 void overlapArea;
+
+describe('gates on the path of the shown population', () => {
+  it('are drawn on a plot of a population below them (same axes), with % of their own parent; others are not', () => {
+    const { engine, ws } = setup();
+    const pop = (id: string, parentId: string | null, gate: GateGeom): Population => ({ id, name: id, parentId, gate, color: '#c00' });
+    ws.populations.push(
+      pop('cells', null, { type: 'rect', x: 'FSC-A', y: 'SSC-A', xmin: 2e5, xmax: 1e6, ymin: 0, ymax: 1e6 }),
+      pop('live', 'cells', { type: 'range', x: 'KO525-A', min: -1e3, max: 1e3 }),
+      pop('big', 'cells', { type: 'rect', x: 'FSC-A', y: 'SSC-A', xmin: 5e5, xmax: 1e6, ymin: 0, ymax: 1e6 }),
+    );
+    const item = plot('dot', 'FSC-A', 'SSC-A');
+    const shown = (population: string) => {
+      item.layers[0].population = population;
+      const rec = recorder();
+      const geom = renderPlot(rec as never, item, item.w, item.h, { ws, engine, activeSampleId: 's1', rasterScale: 1, makeCanvas: canvasMaker([]) });
+      return { gates: geom.gates.map((g) => g.popId), texts: rec.texts.map((t) => t.t) };
+    };
+    expect(shown('root').gates).toEqual(['cells']);
+    // its own gate too (drawn first), then those of its subpopulations
+    expect(shown('cells').gates).toEqual(['cells', 'big']);
+    // live (gated on another channel): the cells gate it lies in, not its sibling "big"
+    const live = shown('live');
+    expect(live.gates).toEqual(['cells']);
+    const pct = (100 * engine.count(ws, 's1', 'cells')) / engine.count(ws, 's1', null);
+    expect(live.texts.some((t) => t.includes(pct.toFixed(1)))).toBe(true);
+  });
+});

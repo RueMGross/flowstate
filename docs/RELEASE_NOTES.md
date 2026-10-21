@@ -1,3 +1,13 @@
+# FlowState 0.10.2-beta
+
+**Download:** `flowstate-standalone.html` below (double-click to open; works offline).
+
+## Fixed
+
+- Plots: changing the population of a plot no longer hides the gates on its axes. Gates further up the population's
+  path stay drawn, for example the Singlets gate on an FSC-A / FSC-H plot of Live cells, with their own % of parent as
+  on the plot they were drawn on; gates of other branches are still left out
+
 # FlowState 0.10.1-beta
 
 **Download:** `flowstate-standalone.html` below (double-click to open; works offline).

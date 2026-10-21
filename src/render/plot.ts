@@ -2598,7 +2598,11 @@ function gateGeometry(item: PlotItem, fr: Frame, xs: ScaleDef, ys: ScaleDef | nu
   const primary = layers[0];
   const out: GateItem[] = [];
   const parentId = primary.popId === 'root' ? null : primary.popId;
-  const kids = popChildren(ws, parentId);
+  // gates on the shown population's own path that lie on the plot's axes (the singlets gate on a plot of live cells,
+  // a population below the singlets) are drawn too, before the gates of its subpopulations, with their own values
+  const path = parentId ? [popById(ws, parentId), ...popAncestors(ws, parentId)].filter((p): p is Population => !!p) : [];
+  const upstream = new Set(path.filter((p) => gateMatchesPlot(gateFor(p, primary.sampleId), item).ok).map((p) => p.id));
+  const kids = [...path.filter((p) => upstream.has(p.id)).reverse(), ...popChildren(ws, parentId)];
   // names shown together: shortened names stay apart from each other ("CD4 S…", not "CD…ve" twice)
   const gateNames = kids.map((k) => k.name);
   const sx = makeScale(xs);
@@ -2671,7 +2675,9 @@ function gateGeometry(item: PlotItem, fr: Frame, xs: ScaleDef, ys: ScaleDef | nu
       const q = i === 0 ? pop.id : resolvePopFor(ws, L.sampleId, pop.id);
       const na = i > 0 && !engine.applies(ws, L.sampleId, q);
       const count = na ? 0 : engine.count(ws, L.sampleId, q);
-      return { count, pct: !na && parentCounts[i] ? (100 * count) / parentCounts[i] : NaN, color: visibleOn(L.color, th), na };
+      // a gate on the path: % of its own parent, as on the plot it was drawn on
+      const base = upstream.has(pop.id) ? (na ? 0 : engine.count(ws, L.sampleId, popById(ws, q)?.parentId ?? null)) : parentCounts[i];
+      return { count, pct: !na && base ? (100 * count) / base : NaN, color: visibleOn(L.color, th), na };
     });
     // staggered histograms list the values top trace first, like the stack
     if (item.plotType === 'histogram' && o.histOffset > 0 && layers.length > 1) vals.reverse();

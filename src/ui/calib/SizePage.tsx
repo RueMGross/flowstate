@@ -1135,7 +1135,7 @@ function FitStep({ d, fit, error, pending, results, chans }: { d: SizeDraft; fit
           <Seg
             value={d.method}
             options={[
-              { value: 'cv', label: 'CV (FCMPASS)', title: 'Sweep the half-angle; choose the lowest CV of measured/predicted ratios (Welsh et al. 2020)' },
+              { value: 'cv', label: 'Lowest CV', title: 'Sweep the half-angle; choose the lowest CV of measured/predicted ratios, as in FCMPASS (Welsh et al. 2020)' },
               { value: 'lsq', label: 'Least squares', title: 'Sweep the half-angle; choose the lowest RMS residual of log10(measured) vs log10(F·σ)' },
               { value: 'fixed', label: 'Fixed half-angle', title: 'Use the half-angle of step 1 (known geometry); only the factor is fitted' },
             ]}

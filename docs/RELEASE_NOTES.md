@@ -1,3 +1,12 @@
+# FlowState 0.10.4-beta
+
+**Download:** `flowstate-standalone.html` below (double-click to open; works offline).
+
+## Changed
+
+- Size calibration: the half-angle fit method "CV (FCMPASS)" is now called "Lowest CV"; its tooltip still credits the
+  method to FCMPASS (Welsh et al. 2020)
+
 # FlowState 0.10.3-beta
 
 **Download:** `flowstate-standalone.html` below (double-click to open; works offline).

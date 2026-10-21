@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent }
 import { engine } from '../core/engine';
 import { popChildren, uid, type PlotItem, type Population, type Workspace } from '../core/model';
 import { popNotApplicableReason, scopeLabel, scopeOwner, scopeTag } from '../core/scope';
+import { setPlotPopulation } from '../render/plot';
 import { copyGatesToGroup, setPopScope } from '../state/scopeOps';
 import { deletePopulation, newPlotItem, pickDefaultChannels, relinkSample, removeSamples, useStore } from '../state/store';
 import { copyGates, gateClipLabel, onGateClip, pasteGates } from './gateOps';
@@ -767,7 +768,7 @@ function PopMenu({ menu, onClose, onRename }: { menu: { x: number; y: number; id
       {selPlot && (
         <>
           <button onClick={() => updPlot((p) => {
-            if (p.layers[0]) p.layers[0].population = menu.id;
+            if (p.layers[0]) setPlotPopulation(st.ws, p, menu.id, st.ui.activeSampleId);
             else p.layers.push({ id: uid('ly'), sample: 'active', population: menu.id });
             p.options.labelPos = {};
             p.options.labelOff = {};

@@ -256,6 +256,8 @@ export interface PlotItem extends ItemBase {
   yParam: string;
   layers: Layer[];
   options: PlotOptions;
+  /** gates the plot showed before its population was changed: still drawn when on its axes (see plotGatePops) */
+  keepGates?: string[];
 }
 
 export interface TextItem extends ItemBase {

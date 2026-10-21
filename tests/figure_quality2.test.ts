@@ -5,7 +5,7 @@ import { Engine } from '../src/core/engine';
 import { defaultPlotOptions, emptyWorkspace, MM, type GateGeom, type PlotItem, type Population, type TextItem, type Workspace } from '../src/core/model';
 import { defaultScaleFor, makeScale } from '../src/core/transforms';
 import { layoutLabels, overlapArea, type Box } from '../src/render/labels';
-import { drawableEvents, omittedEvents, plotTitleText, renderPlot, type RenderEnv } from '../src/render/plot';
+import { drawableEvents, omittedEvents, plotTitleText, renderPlot, setPlotPopulation, type RenderEnv } from '../src/render/plot';
 import { MIN_SCRIPT_PX, runs, runSize, SvgPainter, type RichText, type TextStyle } from '../src/render/painter';
 import { bodyPt, brightOn, histModeOfLabel, middleEllipsis, panelLabelPt, SLIDE_SIZES } from '../src/render/figstyle';
 import { isCalibPanel, newCalibItem, renderCalibPanel } from '../src/render/calibPanel';
@@ -325,5 +325,24 @@ describe('gates on the path of the shown population', () => {
     expect(live.gates).toEqual(['cells']);
     const pct = (100 * engine.count(ws, 's1', 'cells')) / engine.count(ws, 's1', null);
     expect(live.texts.some((t) => t.includes(pct.toFixed(1)))).toBe(true);
+  });
+
+  it('stay on the plot when its population is changed to one above them (All Events)', () => {
+    const { engine, ws } = setup();
+    const pop = (id: string, parentId: string | null, gate: GateGeom): Population => ({ id, name: id, parentId, gate, color: '#c00' });
+    ws.populations.push(
+      pop('cells', null, { type: 'rect', x: 'FSC-A', y: 'SSC-A', xmin: 2e5, xmax: 1e6, ymin: 0, ymax: 1e6 }),
+      pop('singlets', 'cells', { type: 'rect', x: 'FSC-A', y: 'FSC-H', xmin: 2e5, xmax: 1e6, ymin: 0, ymax: 1e6 }),
+    );
+    const item = plot('dot', 'FSC-A', 'FSC-H');
+    item.layers[0].population = 'cells';
+    const gates = () => renderPlot(recorder() as never, item, item.w, item.h, { ws, engine, activeSampleId: 's1', rasterScale: 1, makeCanvas: canvasMaker([]) }).gates.map((g) => g.popId);
+    expect(gates()).toEqual(['singlets']);
+    setPlotPopulation(ws, item, 'root', 's1');
+    expect(item.keepGates).toEqual(['singlets']);
+    expect(gates()).toEqual(['singlets']);
+    // back down: shown as its child again, kept once
+    setPlotPopulation(ws, item, 'cells', 's1');
+    expect(gates()).toEqual(['singlets']);
   });
 });

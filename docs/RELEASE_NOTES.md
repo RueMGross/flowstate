@@ -1,3 +1,13 @@
+# FlowState 0.10.3-beta
+
+**Download:** `flowstate-standalone.html` below (double-click to open; works offline).
+
+## Fixed
+
+- Plots: gates also stay on a plot when its population is changed to one further up the tree (for example from Cells
+  to All Events, the Singlets gate stays on the FSC-A / FSC-H plot). A plot keeps the gates it showed, on its axes, with
+  their own % of parent; a new plot shows only the gates of its population. Show gates (Inspector) hides them all
+
 # FlowState 0.10.2-beta
 
 **Download:** `flowstate-standalone.html` below (double-click to open; works offline).

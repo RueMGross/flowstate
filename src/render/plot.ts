@@ -2592,17 +2592,51 @@ function gateHalo(item: PlotItem, color: string, th: Theme): string | null {
 }
 
 /** Gate outlines (drawn later) and their label requests for the layout pass. */
+/**
+ * Gates drawn on a plot of population `popId` (null: all events) of sample `sampleId`: those on the plot's axes on the
+ * population's own path (the singlets gate on a plot of live cells, a population below the singlets), those the plot
+ * kept when its population was changed (item.keepGates; `kept` false: without them), then the gates of its
+ * subpopulations. `own`: gates whose values are % of their own parent (as on the plot they were drawn on), not of the
+ * plot's population.
+ */
+export function plotGatePops(ws: Workspace, item: PlotItem, popId: string | null, sampleId: string, kept = true): { pops: Population[]; own: Set<string> } {
+  const onAxes = (p: Population) => gateMatchesPlot(gateFor(p, sampleId), item).ok;
+  const path = popId ? [popById(ws, popId), ...popAncestors(ws, popId)].filter((p): p is Population => !!p).reverse() : [];
+  const keep = kept ? (item.keepGates ?? []).map((id) => popById(ws, resolvePopFor(ws, sampleId, id))).filter((p): p is Population => !!p) : [];
+  const kids = popChildren(ws, popId);
+  const own = new Set([...path, ...keep].filter((p) => onAxes(p) && !kids.includes(p)).map((p) => p.id));
+  const pops = [...path, ...keep].filter((p) => own.has(p.id));
+  return { pops: [...pops.filter((p, i) => pops.indexOf(p) === i), ...kids], own };
+}
+
+/**
+ * Change the population of a plot's first layer (in an update): the gates it shows now and would no longer show stay on
+ * it (keepGates), so going up the tree (singlets plot to All Events) keeps them like going down does.
+ */
+export function setPlotPopulation(ws: Workspace, item: PlotItem, popId: string, activeSampleId: string | null) {
+  const l = item.layers[0];
+  if (!l || l.population === popId) {
+    if (l) l.population = popId;
+    return;
+  }
+  const sid = (l.sample === 'active' ? activeSampleId : l.sample) ?? ws.samples[0]?.id ?? '';
+  const res = (p: string) => (p === 'root' ? null : resolvePopFor(ws, sid, p));
+  const before = item.options.showGates ? plotGatePops(ws, item, res(l.population), sid).pops.filter((p) => gateMatchesPlot(gateFor(p, sid), item).ok) : [];
+  l.population = popId;
+  const after = new Set(plotGatePops(ws, item, res(popId), sid, false).pops.map((p) => p.id));
+  const keep = [...(item.keepGates ?? []), ...before.map((p) => p.id).filter((id) => !after.has(id))];
+  const uniq = keep.filter((id, i) => keep.indexOf(id) === i && !!popById(ws, id));
+  if (uniq.length) item.keepGates = uniq;
+  else delete item.keepGates;
+}
+
 function gateGeometry(item: PlotItem, fr: Frame, xs: ScaleDef, ys: ScaleDef | null, layers: ResolvedLayer[], env: RenderEnv, st: TextStyle, lw: number, th: Theme, plotW = fr.x + fr.w, quadValues = false): GateItem[] {
   const { ws, engine } = env;
   const o = item.options;
   const primary = layers[0];
   const out: GateItem[] = [];
   const parentId = primary.popId === 'root' ? null : primary.popId;
-  // gates on the shown population's own path that lie on the plot's axes (the singlets gate on a plot of live cells,
-  // a population below the singlets) are drawn too, before the gates of its subpopulations, with their own values
-  const path = parentId ? [popById(ws, parentId), ...popAncestors(ws, parentId)].filter((p): p is Population => !!p) : [];
-  const upstream = new Set(path.filter((p) => gateMatchesPlot(gateFor(p, primary.sampleId), item).ok).map((p) => p.id));
-  const kids = [...path.filter((p) => upstream.has(p.id)).reverse(), ...popChildren(ws, parentId)];
+  const { pops: kids, own: upstream } = plotGatePops(ws, item, parentId, primary.sampleId);
   // names shown together: shortened names stay apart from each other ("CD4 S…", not "CD…ve" twice)
   const gateNames = kids.map((k) => k.name);
   const sx = makeScale(xs);

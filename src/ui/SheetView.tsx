@@ -5,7 +5,7 @@ import { renderChart } from '../render/chart';
 import { CanvasPainter, fitCanvasScale, parseSup, withFallback } from '../render/painter';
 import { vmetrics } from '../render/fonts';
 import { renderStatsBox, textOverflows } from '../render/items';
-import { gateMatchesPlot, PT } from '../render/plot';
+import { gateMatchesPlot, PT, setPlotPopulation } from '../render/plot';
 import { defaultPlotSize, newPlotItem, pickDefaultChannels, useStore } from '../state/store';
 import { setCursorInfo } from './cursorBus';
 import { addItems, addStatsBelow, arrangeGapMm, copyAsImage, deleteItems, duplicateItems, nudgeItems, populationPlotSpec, reorder, revealItems } from './layoutOps';
@@ -732,7 +732,7 @@ export function SheetView({ readOnly }: { readOnly?: boolean } = {}) {
       } else {
         if (addLayer) p.layers.push({ id: uid('ly'), sample: p.layers[0].sample, population: d.id });
         else {
-          p.layers[0].population = d.id;
+          setPlotPopulation(w, p, d.id, st.ui.activeSampleId);
           p.options.labelPos = {};
           p.options.labelOff = {};
         }

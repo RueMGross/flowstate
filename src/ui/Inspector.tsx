@@ -33,7 +33,7 @@ import {
 } from '../core/model';
 import { describeScale, formatLinear } from '../core/transforms';
 import { CUSTOM_CMAP, DEFAULT_CUSTOM_STOPS, luminance, mixHex } from '../render/colormaps';
-import { omittedEvents, plotFitNotes, plotSampleId, usesColormap } from '../render/plot';
+import { omittedEvents, plotFitNotes, plotSampleId, setPlotPopulation, usesColormap } from '../render/plot';
 import { autoTextColor, bodyPt, histModeOfLabel, optsX, pageIsDark, SLIDE_SIZES, titleModeOf, type PlotOptionsX, type TitleMode } from '../render/figstyle';
 import { isCalibPanel, type CalibChartItem } from '../render/calibPanel';
 import { cellRange, plateCells } from '../core/plate';
@@ -350,7 +350,9 @@ function PlotInspector({ item, sheet, ws }: { item: PlotItem; sheet: Worksheet; 
             </button>
             <div className="full">
               <Sel value={l.population} options={pops} ariaLabel="Population" onChange={(v) => up((p) => {
-                p.layers[i].population = v;
+                // the first layer's gates stay on the plot (also when going up the tree)
+                if (i === 0) setPlotPopulation(useStore.getState().ws, p, v, useStore.getState().ui.activeSampleId);
+                else p.layers[i].population = v;
                 if (i === 0) {
                   p.options.labelPos = {};
                   p.options.labelOff = {};

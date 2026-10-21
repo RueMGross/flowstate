@@ -343,6 +343,10 @@ export function repairItem(raw: unknown, ctx: RefContext, notes: RepairNotes, id
       it.layers = [{ id: uid('ly'), sample: 'active', population: 'root' }];
       fixed = true;
     }
+    if (it.keepGates !== undefined && !(Array.isArray(it.keepGates) && it.keepGates.every(isStr))) {
+      delete it.keepGates;
+      fixed = true;
+    }
     if (!isObj(it.options)) {
       it.options = { ...PLOT_REQUIRED };
       fixed = true;

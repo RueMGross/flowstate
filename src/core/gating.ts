@@ -419,6 +419,26 @@ function ellipseIdx(parent: Uint32Array, dx: Float32Array, dy: Float32Array, cx:
   return out.slice(0, k);
 }
 
+/**
+ * Strict gates on a log axis (Gating-ML flog): values at or below 0 have no log value and are in no gate, as in other
+ * Gating-ML software. The display puts them just below the axis, where a gate reaching below the axis would catch them.
+ * Null when a channel is missing.
+ */
+function strictLogParent(parent: Uint32Array, g: Shape2D, sx: ScaleDef, sy: ScaleDef, ctx: GateContext): Uint32Array | null {
+  let p = parent;
+  for (const [ch, def] of [
+    [g.x, sx],
+    [g.y, sy],
+  ] as const) {
+    const b = def.type === 'window' ? def.base : def;
+    if (b.type !== 'log' || b.clampLow) continue;
+    const raw = ctx.raw(ch);
+    if (!raw) return null;
+    p = filterIdx(p, (e) => raw[e] > 0);
+  }
+  return p;
+}
+
 export function applyGate(g: GateGeom, parent: Uint32Array, ctx: GateContext): Uint32Array {
   switch (g.type) {
     case 'rect': {
@@ -482,7 +502,10 @@ export function applyGate(g: GateGeom, parent: Uint32Array, ctx: GateContext): U
       const py = new Float64Array(g.points.map((p) => scY.fwd(p[1])));
       // Gates drawn in the app treat off-scale events as sitting on the axis edge, exactly where they are displayed.
       // Imported Gating-ML gates keep strict semantics.
-      return polygonIdx(parent, dx, dy, px, py, !isStrictGate(g));
+      const strict = isStrictGate(g);
+      const from = strict ? strictLogParent(parent, g, sx, sy, ctx) : parent;
+      if (!from) return new Uint32Array(0);
+      return polygonIdx(from, dx, dy, px, py, !strict);
     }
     case 'ellipse': {
       const { x: sx, y: sy } = gateEvalScales(g, (ch) => ctx.scaleOf(ch));
@@ -498,7 +521,10 @@ export function applyGate(g: GateGeom, parent: Uint32Array, ctx: GateContext): U
       );
       if (!fr) return new Uint32Array(0);
       const { c, i00, i01, i10, i11 } = fr;
-      return ellipseIdx(parent, dx, dy, c[0], c[1], i00, i01, i10, i11, !isStrictGate(g));
+      const strict = isStrictGate(g);
+      const from = strict ? strictLogParent(parent, g, sx, sy, ctx) : parent;
+      if (!from) return new Uint32Array(0);
+      return ellipseIdx(from, dx, dy, c[0], c[1], i00, i01, i10, i11, !strict);
     }
     case 'bool': {
       // operand ids prefixed with '!' are used as complement; a missing operand is an empty set, which empties NOT and AND

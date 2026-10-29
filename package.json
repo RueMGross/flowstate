@@ -1,6 +1,6 @@
 {
   "name": "flowstate",
-  "version": "0.10.4-beta",
+  "version": "0.10.5-beta",
   "private": true,
   "description": "FlowState: browser-based flow cytometry analysis (FCS import, gating, compensation, spectral unmixing, bead calibration, statistics and publication figures); runs entirely client-side.",
   "license": "AGPL-3.0-only",

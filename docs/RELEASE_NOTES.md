@@ -1,3 +1,15 @@
+# FlowState 0.10.5-beta
+
+**Download:** `flowstate-standalone.html` below (double-click to open; works offline).
+
+## Fixed
+
+- Log axes spanning less than one decade (for example 100 to 500) show the range as set; they were widened to one
+  decade. Gating-ML gates on such axes (flog with M below 1) are now imported at the right values; their boundaries
+  were shifted before, which changed their event counts
+- Imported Gating-ML polygon and ellipse gates on a log axis no longer include events at or below 0 when the gate
+  reaches below the axis, as in other Gating-ML software. Gates drawn in FlowState and FlowJo gates are unchanged
+
 # FlowState 0.10.4-beta
 
 **Download:** `flowstate-standalone.html` below (double-click to open; works offline).

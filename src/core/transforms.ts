@@ -644,8 +644,11 @@ export function makeScale(def: ScaleDef): Scale {
       break;
     }
     case 'log': {
-      const lmin = Math.log10(Math.max(def.min, 1e-12));
-      const lmax = Math.log10(Math.max(def.max, def.min * 10, 1e-11));
+      // the axis spans min..max as set, also less than one decade (Gating-ML flog with M < 1); one decade only when
+      // max is not above min
+      const lo = Math.max(def.min, 1e-12);
+      const lmin = Math.log10(lo);
+      const lmax = Math.log10(def.max > lo ? def.max : lo * 10);
       const span = lmax - lmin || 1;
       // values <= 0 are placed just below the axis (off-scale low); FlowJo's log puts everything below min on the axis
       if (def.clampLow) fwd = (v) => (v > def.min ? (Math.log10(v) - lmin) / span : v === v ? 0 : NaN);

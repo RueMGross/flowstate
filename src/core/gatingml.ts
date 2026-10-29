@@ -457,9 +457,10 @@ function transformXml(id: string, def: NonLinearDef): string {
     case 'arcsinh':
       return `<transforms:transformation transforms:id="${id}"><transforms:fasinh transforms:T="${fmt(def.T)}" transforms:M="${fmt(def.M)}" transforms:A="${fmt(def.A)}"/></transforms:transformation>`;
     case 'log': {
-      // the same decades the app's log axis shows (min <= 0 is clamped to a tiny positive value, at least one decade)
-      const lmin = Math.log10(Math.max(def.min, 1e-12));
-      const lmax = Math.log10(Math.max(def.max, def.min * 10, 1e-11));
+      // the same decades the app's log axis shows (min <= 0 is clamped to a tiny positive value; see makeScale)
+      const lo = Math.max(def.min, 1e-12);
+      const lmin = Math.log10(lo);
+      const lmax = Math.log10(def.max > lo ? def.max : lo * 10);
       return `<transforms:transformation transforms:id="${id}"><transforms:flog transforms:T="${fmt(Math.pow(10, lmax))}" transforms:M="${fmt(lmax - lmin)}"/></transforms:transformation>`;
     }
   }

@@ -635,7 +635,7 @@ export function App() {
         ref={anyInput}
         type="file"
         multiple
-        accept=".json,.zip,.xml,.wsp,.flowjo,.fcs,.lmd,.csv,.tsv,.txt,.mtx,.comp"
+        accept=".json,.zip,.xml,.wsp,.flowjo,.fcs,.lmd,.csv,.tsv,.txt,.mtx,.comp,.xit"
         aria-label="Open files"
         style={{ display: 'none' }}
         onChange={(e) => {

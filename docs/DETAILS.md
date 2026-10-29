@@ -31,7 +31,7 @@ is told from its content. Matrices can also be imported and exported in the Comp
 |---|---|---|
 | FlowJo 10 | FCS; workspaces (.wsp, or .xml; a v11 .flowjo only if it holds one): samples, gates, transforms, matrices; matrix files (.mtx, spilloverMatrix XML); CSV event exports as samples | FCS 3.1 populations; matrix as tab-separated .txt or .csv; population CSV (header "FITC-A :: CD3", as FlowJo writes it) |
 | FlowLogic (Inivai) | FCS; matrix TXT / CSV (tab, semicolon or comma; fractions or %); CSV event exports ("Raw" or "Real") as samples | FCS 3.1 populations; matrix .txt; statistics CSV / XLSX |
-| CytExpert (CytoFLEX) | FCS ($SPILLOVER; plate number and well); export folders (Open folder); compensation files (.comp) | FCS 3.1 populations |
+| CytExpert (CytoFLEX) | FCS ($SPILLOVER; plate number and well); export folders (Open folder); compensation files (.comp); gates of experiment files (.xit: rectangle and polygon gates, tube-specific positions) | FCS 3.1 populations |
 | Kaluza / Navios | FCS and LMD files ($COMP, $SPILLOVER) | FCS 3.1 populations |
 | FCS Express | FCS; text / CSV exports of events and matrices | FCS 3.1 populations; matrix .txt / .csv; statistics CSV / XLSX |
 | Cytobank | FCS; Gating-ML 2.0 | FCS 3.1; Gating-ML 2.0 gates |
@@ -43,6 +43,7 @@ is told from its content. Matrices can also be imported and exported in the Comp
 - Matrix import: names are matched to the samples' channels by `$PnN` (also ignoring case, with or without `-A`,
   without FlowJo's `Comp-` prefix) or by the marker / detector label `$PnS`; names without a channel are reported and
   ignored when compensating. A compensation matrix (the inverse of the spillover) is recognised and inverted.
+- CytExpert .xit experiment files: the gate tree is read (rectangles and polygons; other shapes are reported and skipped) and matched to the samples' channels through the `$PnS` labels. A polygon is stored as its drawn vertices followed by a densely interpolated outline; CytExpert counts against the outline in linear data space, and so does the import (checked against CytExpert's statistics export: same counts and medians). Open the .xit together with or after the FCS files (Open folder skips it).
 - CytExpert .comp files hold a Height and an Area matrix (rows = detectors); they are imported as one matrix over the
   -H and -A channels, matched through the `$PnS` labels ("B531-A"), as CytExpert writes `$SPILLOVER`.
 - CSV event tables become samples with the values as exported and no compensation keywords (marked "imported from
@@ -50,7 +51,7 @@ is told from its content. Matrices can also be imported and exported in the Comp
 
 Known limits:
 
-- Not read: FlowLogic workspaces (.glf), Kaluza analyses, FCS Express layouts, CytExpert experiments, FlowJo v11
+- Not read: FlowLogic workspaces (.glf), Kaluza analyses, FCS Express layouts, CytExpert experiments beyond their gates (plots, statistics, settings), FlowJo v11
   analyses (JSON), spectral (unmixing) matrices in FlowJo files, CytExpert's autofluorescence and background settings.
 - Gating-ML 2.0: hyperlog transforms, ratio dimensions and gates in more than two dimensions are not supported.
 - FlowJo matrix files are read but not written (the .mtx layout could not be checked against FlowJo); export the

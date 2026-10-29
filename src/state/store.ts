@@ -42,7 +42,7 @@ const NATURAL = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 const PT_PX = 96 / 72;
 
 export type Tool = 'select' | 'polygon' | 'rect' | 'ellipse' | 'quadrant' | 'range' | 'split' | 'text' | 'zoom' | 'autogate';
-export type View = 'sheet' | 'tables' | 'comp' | 'unmix' | 'calib' | 'plate';
+export type View = 'sheet' | 'tables' | 'comp' | 'unmix' | 'calib' | 'plate' | 'plugins';
 
 export interface ToastAction {
   label: string;
@@ -68,6 +68,8 @@ export interface UIState {
   ribbonTab: string;
   /** active page of the calibration view */
   calibMode?: 'mesf' | 'size';
+  /** plugin whose page the plugins view shows (null / missing: the list of plugins) */
+  activePlugin?: string | null;
   dataVersion: number;
   toasts: Toast[];
   dialog: null | { kind: string; payload?: unknown };
@@ -513,14 +515,15 @@ export interface SavedUi {
   calibMode?: 'mesf' | 'size';
   sampleFilter?: string;
   activePlate?: string | null;
+  activePlugin?: string | null;
 }
 
 /** The current UI state worth restoring. */
 export function savedUiOf(ui: UIState = useStore.getState().ui): SavedUi {
-  return { activeSampleId: ui.activeSampleId, activeSheetId: ui.activeSheetId, view: ui.view, activeTableId: ui.activeTableId, calibMode: ui.calibMode, sampleFilter: ui.sampleFilter, activePlate: ui.activePlate ?? null };
+  return { activeSampleId: ui.activeSampleId, activeSheetId: ui.activeSheetId, view: ui.view, activeTableId: ui.activeTableId, calibMode: ui.calibMode, sampleFilter: ui.sampleFilter, activePlate: ui.activePlate ?? null, activePlugin: ui.activePlugin ?? null };
 }
 
-const VIEWS: View[] = ['sheet', 'tables', 'comp', 'unmix', 'calib', 'plate'];
+const VIEWS: View[] = ['sheet', 'tables', 'comp', 'unmix', 'calib', 'plate', 'plugins'];
 
 /** Restore a saved UI state onto the current workspace (references that no longer exist are skipped). */
 export function restoreSavedUi(saved: SavedUi | null | undefined) {
@@ -537,6 +540,7 @@ export function restoreSavedUi(saved: SavedUi | null | undefined) {
   if (saved.calibMode === 'mesf' || saved.calibMode === 'size') patch.calibMode = saved.calibMode;
   if (saved.sampleFilter && (saved.sampleFilter === 'all' || ws.groups.some((g) => g.id === saved.sampleFilter))) patch.sampleFilter = saved.sampleFilter;
   if (typeof saved.activePlate === 'string') patch.activePlate = saved.activePlate;
+  if (typeof saved.activePlugin === 'string') patch.activePlugin = saved.activePlugin;
   if (Object.keys(patch).length) setUI({ ...patch, selectedItemIds: [], keyItemId: null });
 }
 

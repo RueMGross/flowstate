@@ -330,7 +330,7 @@ export type AutoResult =
  * Density session for auto gating on a plot: the events of `popId` in `sampleId`, in the plot's display space (axes),
  * and an exact counter in the space the new gate is evaluated in. `prev` is reused when its inputs are unchanged.
  */
-export function autoSession(ws: Workspace, item: PlotItem, axes: PlotAxes, sampleId: string, popId: string, prev?: AutoSession | null): AutoSession | null {
+export function autoSession(ws: Workspace, item: Pick<PlotItem, 'xParam' | 'yParam' | 'plotType'>, axes: PlotAxes, sampleId: string, popId: string, prev?: AutoSession | null): AutoSession | null {
   const idx = engine.population(ws, sampleId, popId);
   if (item.plotType === 'histogram') {
     const dx = engine.display(ws, sampleId, item.xParam, axes.xScale);

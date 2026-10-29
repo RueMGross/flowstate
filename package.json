@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:single": "vite build --mode single && python3 scripts/make_artifact.py",
+    "build:plugin": "node scripts/build-plugin.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p ."
   },

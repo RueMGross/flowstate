@@ -130,9 +130,16 @@ npm run dev            # development server
 npm test               # tests
 npm run build          # static build in dist/
 npm run build:single   # one self-contained HTML file (artifact/flowstate-standalone.html, needs Python 3)
+npm run build:plugin -- <id>   # a plugin as one file to load into FlowState (dist-plugins/)
 ```
 
 React 18, TypeScript, Vite and zustand; no server needed. Details in [docs/DETAILS.md](docs/DETAILS.md).
+
+### Plugins
+
+Assay-specific workflows (e.g. bead-based multiplex assays such as MACSPlex or LEGENDplex) can be added as plugins:
+a page of their own that uses FlowState's samples, gates and statistics through a small, stable API. See
+[docs/PLUGINS.md](docs/PLUGINS.md).
 
 ## Contact
 

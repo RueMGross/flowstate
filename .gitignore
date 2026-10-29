@@ -18,3 +18,4 @@ server/ai-proxy/usage.json
 *.WSP
 tests/lab_local*
 .DS_Store
+dist-plugins/

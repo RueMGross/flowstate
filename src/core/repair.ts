@@ -950,6 +950,19 @@ export function repairWorkspace(obj: unknown): { ws: Workspace; notes: string[] 
     }
   }
 
+  // ---- plugin state (optional): plugin id -> the plugin's own data (each plugin checks its own, see plugins/api.ts)
+  if (w.plugins !== undefined) {
+    if (!isObj(w.plugins)) {
+      delete w.plugins;
+      other();
+    } else
+      for (const [k, v] of Object.entries(w.plugins))
+        if (!/^[a-z][a-z0-9-]{0,39}$/.test(k) || v === undefined) {
+          delete w.plugins[k];
+          other();
+        }
+  }
+
   // ---- plate view settings (optional): a damaged statistic shows All Events, a damaged look the defaults
   if (w.plateView !== undefined) {
     const pv = w.plateView;

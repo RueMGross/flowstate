@@ -473,6 +473,11 @@ export interface Workspace {
   plateView?: PlateViewSettings;
   /** what the analysis needs (chosen for a new analysis, changed any time): unset shows every tool. Optional. */
   setup?: ExperimentSetup;
+  /**
+   * State of plugins (plugin id -> its own JSON data, see src/plugins/api.ts), kept with the workspace also when the
+   * plugin is not available. Optional.
+   */
+  plugins?: Record<string, unknown>;
 }
 
 /**

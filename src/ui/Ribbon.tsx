@@ -15,6 +15,8 @@ import { openMfiTableDialog } from './TablesView';
 import { ribbonMinimized, ShellIcon, SHORT_QUERY, toggleRibbon, useLayout, useMedia } from './shell';
 import { openUnmixView } from './unmix/draft';
 import { redetectWells } from '../state/plateOps';
+import { usePlugins } from '../plugins/registry';
+import { loadPluginFile, openPlugin } from './PluginsView';
 
 /** Compaction levels of the ribbon body: 0 full, 1 tighter, 2 small buttons icon-only, 3 all buttons icon-only. */
 const MAX_FIT = 3;
@@ -46,6 +48,26 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** Plugins tab: one button per plugin, loading a plugin file and the developer guide. */
+function PluginRibbonGroups() {
+  const entries = usePlugins((s) => s.entries);
+  const active = useStore((s) => (s.ui.view === 'plugins' ? s.ui.activePlugin ?? null : undefined));
+  return (
+    <>
+      <Group label="Plugins">
+        <RBtn icon={<Icon.plug />} label="All plugins" on={active === null} onClick={() => openPlugin(null)} title="The plugins available in this FlowState" />
+        {entries.map((e) => (
+          <RBtn key={e.plugin.id} icon={<Icon.plug />} label={e.plugin.name} on={active === e.plugin.id} onClick={() => openPlugin(e.plugin.id)} title={e.plugin.description} />
+        ))}
+      </Group>
+      <Group label="Develop">
+        <RBtn icon={<Icon.open />} label="Load plugin file" onClick={loadPluginFile} title="Load a plugin file built with npm run build:plugin (for this session)" />
+        <RBtn icon={<Icon.help />} label="Developer guide" onClick={() => window.open('https://github.com/RueMGross/flowstate/blob/main/docs/PLUGINS.md', '_blank', 'noopener')} />
+      </Group>
+    </>
+  );
+}
+
 const ALL_TABS = [
   ['home', 'Home'],
   ['plot', 'Plot'],
@@ -56,10 +78,11 @@ const ALL_TABS = [
   ['tables', 'Statistics'],
   ['export', 'Export'],
   ['ai', 'AI'],
+  ['plugins', 'Plugins'],
 ] as const;
 
 /** Ribbon tabs that belong to a view of their own (the document tab of the same name). */
-const TAB_VIEW: Record<string, View[]> = { comp: ['comp', 'unmix'], calib: ['calib'], tables: ['tables', 'plate'] };
+const TAB_VIEW: Record<string, View[]> = { comp: ['comp', 'unmix'], calib: ['calib'], tables: ['tables', 'plate'], plugins: ['plugins'] };
 /** Ribbon tabs that work on the worksheet. */
 const SHEET_TABS = new Set(['plot', 'gate', 'layout']);
 let lastSheetTab = 'home';
@@ -471,6 +494,9 @@ export function Ribbon({ openFcs, openFolder, openWorkspace, importGatingML }: {
       break;
     case 'ai':
       body = <AiRibbonGroups />;
+      break;
+    case 'plugins':
+      body = <PluginRibbonGroups />;
       break;
     case 'export':
       body = (

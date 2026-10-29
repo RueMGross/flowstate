@@ -92,6 +92,7 @@ export const Icon = {
   down: () => S([<path key="a" d="M6 9l6 6 6-6" />]),
   right: () => S([<path key="a" d="M9 6l6 6-6 6" />]),
   bool: () => S([<circle key="a" cx="9" cy="12" r="5.5" />, <circle key="b" cx="15" cy="12" r="5.5" />]),
+  plug: () => S([<path key="a" d="M9 3v5M15 3v5" />, <path key="b" d="M6 8h12v3a6 6 0 0 1-12 0z" />, <path key="c" d="M12 17v4" />]),
   help: () => S([<circle key="a" cx="12" cy="12" r="9" />, <path key="b" d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7v.5M12 17h.01" />]),
   barchart: () => S([<path key="a" d="M4 4v16h16" />, <rect key="b" x="7" y="11" width="3" height="9" />, <rect key="c" x="12" y="7" width="3" height="13" />, <rect key="d" x="17" y="13" width="3" height="7" />]),
   demo: () => S([<path key="a" d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3" />, <path key="b" d="M7.5 15h9" />]),

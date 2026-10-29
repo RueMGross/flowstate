@@ -25,6 +25,8 @@ import { fitLargeScreen, fitZoom, setZoom, SheetView, zoomBack, zoomStep, zoomTo
 import { closeGatingView, GatingView, openGatingView } from './GatingView';
 import { TablesView } from './TablesView';
 import { PlateDocView } from './PlateView';
+import { PluginsView } from './PluginsView';
+import { usePlugins } from '../plugins/registry';
 import { layoutOf } from '../render/plateChart';
 import { droppedFolderEntries, folderInputFiles, readDroppedEntries } from '../io/folders';
 import { ContextMenu, Modal } from './widgets';
@@ -849,6 +851,7 @@ export function App() {
               {ui.view === 'unmix' && <UnmixView />}
               {ui.view === 'calib' && <CalibrationView />}
               {ui.view === 'plate' && <PlateDocView />}
+              {ui.view === 'plugins' && <PluginsView />}
             </ErrorBoundary>
           </section>
           <aside id="side-right" className={`side right${rightShown ? ' shown' : ''}`} aria-label="Inspector" style={mode === 'compact' ? { width: widths.right } : undefined}>
@@ -981,6 +984,7 @@ function PanelToggle({ side, shown, mode }: { side: Side; shown: boolean; mode: 
 function DocTabs({ sheetsOnly }: { sheetsOnly?: boolean }) {
   const ws = useStore((s) => s.ws);
   const ui = useStore((s) => s.ui);
+  const pluginCount = usePlugins((s) => s.entries.length);
   const st = useStore.getState();
   const [editingSheet, setEditingSheet] = useState<string | null>(null);
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null);
@@ -1083,6 +1087,7 @@ function DocTabs({ sheetsOnly }: { sheetsOnly?: boolean }) {
               ['comp', <Icon.matrix key="c" />, 'Compensation', true],
               ['unmix', <Icon.spectrum key="u" />, 'Unmixing', ui.view === 'unmix' || !!ws.derived?.some((d) => d.kind === 'unmix')],
               ['calib', <Icon.beads key="k" />, 'Calibration', ui.view === 'calib' || !!ws.derived?.some((d) => d.kind !== 'unmix')],
+              ['plugins', <Icon.plug key="g" />, 'Plugins', ui.view === 'plugins' || pluginCount > 0 || Object.keys(ws.plugins ?? {}).length > 0],
             ] as const
           )
             .filter(([, , , show]) => show)

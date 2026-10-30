@@ -399,10 +399,20 @@ describe('MACSPlex layout tools and raw results', () => {
     expect(d.every((r) => r.role === 'sample' && r.planned_volume_uL === 120 && r.blank_group === '')).toBe(true);
     const rows = d.map((r) => (r.well.startsWith('A') ? { ...r, role: 'blank' as const } : r));
     const p = pairBlanks(rows, 'column');
-    expect(p.find((r) => r.well === 'B2')!.blank_group).toBe('blank col 2');
-    expect(p.find((r) => r.well === 'A2')!.blank_group).toBe('blank col 2');
+    expect(p.find((r) => r.well === 'B2')!.blank_group).toBe('blank col 2 A2');
+    expect(p.find((r) => r.well === 'A2')!.blank_group).toBe('blank col 2 A2');
     expect(parseLayout(layoutToCsv(p))).toEqual({ rows: p, errors: [] });
     expect(pairBlanks(rows, 'row').find((r) => r.well === 'B2')!.blank_group).toBe(''); // no blank in row B
+    // two blocks in one column (blanks in A and E, as a plate with two halves): B-D with A, F-H with E; neighbouring
+    // blanks form one group
+    const col = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1'].map((well) => ({
+      ...rows[0],
+      well,
+      role: (/^[AE]/.test(well) ? 'blank' : 'sample') as 'blank' | 'sample',
+    }));
+    expect(pairBlanks(col, 'column').map((r) => r.blank_group)).toEqual([...Array(4).fill('blank col 1 A1'), ...Array(4).fill('blank col 1 E1')]);
+    const trip = ['A1', 'B1', 'C1', 'D1'].map((well) => ({ ...rows[0], well, role: (well === 'D1' ? 'sample' : 'blank') as 'blank' | 'sample' }));
+    expect(new Set(pairBlanks(trip, 'column').map((r) => r.blank_group))).toEqual(new Set(['blank col 1 A1']));
   });
 
   it('reads a CytExpert .xit (errors are reported, not thrown)', () => {

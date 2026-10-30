@@ -349,24 +349,41 @@ export function draftLayout(fs: PluginContext<MacsplexState>, plannedVolume: num
 }
 
 /**
- * Pair every non-blank well with the blank wells of the same plate column (by = 'column') or row (by = 'row'): sets
- * blank_group for both. Wells with no blank in their column / row keep their blank group.
+ * Pair the wells of each plate column (by = 'column') or row (by = 'row') with the blank wells in it. Blanks next to
+ * each other form one blank group; every other well takes the nearest blank group before it (above / to the left),
+ * or the first one after it when there is none before. So a column with blanks in rows A and E pairs B to D with A and
+ * F to H with E. Wells in a column / row without blanks keep their blank group.
  */
 export function pairBlanks(rows: LayoutRow[], by: 'column' | 'row'): LayoutRow[] {
-  const key = (w: string) => {
-    const rc = wellRowCol(w);
-    return rc ? (by === 'column' ? `col ${rc.col}` : `row ${rc.row}`) : null;
-  };
-  const withBlank = new Set(
-    rows
-      .filter((r) => r.role === 'blank')
-      .map((r) => key(r.well))
-      .filter(Boolean),
-  );
-  return rows.map((r) => {
-    const k = key(r.well);
-    return k && withBlank.has(k) ? { ...r, blank_group: `blank ${k}` } : r;
+  const out = rows.map((r) => ({ ...r }));
+  const lines = new Map<string, { pos: number; i: number }[]>();
+  out.forEach((r, i) => {
+    const rc = wellRowCol(r.well);
+    if (!rc) return;
+    const key = by === 'column' ? `col ${rc.col}` : `row ${rc.row}`;
+    const pos = by === 'column' ? rc.row.charCodeAt(0) : rc.col;
+    if (!lines.has(key)) lines.set(key, []);
+    lines.get(key)!.push({ pos, i });
   });
+  for (const [key, line] of lines) {
+    line.sort((a, b) => a.pos - b.pos);
+    // blank groups: runs of neighbouring blank wells
+    const groups: { start: number; name: string }[] = [];
+    line.forEach((w, k) => {
+      if (out[w.i].role !== 'blank') return;
+      const prev = line[k - 1];
+      const joins = prev && out[prev.i].role === 'blank' && w.pos - prev.pos === 1;
+      if (!joins) groups.push({ start: k, name: `blank ${key} ${out[w.i].well}` });
+      out[w.i].blank_group = groups[groups.length - 1].name;
+    });
+    if (!groups.length) continue;
+    line.forEach((w, k) => {
+      if (out[w.i].role === 'blank') return;
+      const before = groups.filter((g) => g.start < k);
+      out[w.i].blank_group = (before.length ? before[before.length - 1] : groups[0]).name;
+    });
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ statistics helpers (D3, D13)

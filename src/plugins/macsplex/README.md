@@ -1,10 +1,10 @@
 # MACSPlex Exosome plugin
 
 Analysis of the MACSPlex Exosome Kit (human; 37 marker capture beads and 2 isotype control beads) in FlowState,
-following a fixed, versioned method (method specification v1.1, decisions D1 to D14). A Python reference implementation
+following a fixed, versioned method (method specification v1.2, decisions D1 to D14). A Python reference implementation
 of the same method (`macsplex_ref`, kept outside this repository) gives identical numbers on the same gates; the plugin
 was checked against it on synthetic files (tests/macsplex.test.ts, the same hand-computed values as the reference's
-tests) and on real experiments (not in this repository).
+tests) and on real experiments (results not in this repository).
 
 ## Steps
 
@@ -14,11 +14,16 @@ tests) and on real experiments (not in this repository).
 2. **Gates in checked steps (D2).** One gate set for the whole plate:
    1. template: the bead positions of a CytExpert experiment (gates imported from its .xit, or a template pasted as
       JSON);
-   2. auto-gating: `fs.autoGate` around each bead's template position in a reference well (default: the sample with
-      the most events), all in one undo step; or, in validation mode, the template polygons as they are (linear scales);
+   2. alignment: each bead's template polygon is moved, without changing its shape, onto its bead population in a
+      reference well (default: the sample with the most events): in log10 space, the events inside the polygon
+      enlarged 1.3 times around its centre, polygon centre moved to their median, up to 5 times. Deterministic, so the
+      Python reference reproduces it exactly. All gates are made in one undo step. Validation mode: the template
+      polygons as they are. Gates are evaluated in linear space, exactly as the template;
    3. check: per bead, events and reporter median of the current gate against the template gate, in the reference
       well and over all wells; differences above a limit (default 10%, provisional) are flagged `gate_check`;
-   4. manual correction of the shared gate in the gating view where needed (flag `gate_corrected`);
+   4. review well by well in the plugin's bead plot (click a well in the plate map); a shifted gate is dragged onto its
+      bead or aligned again in the shown well. Both change the shared gate, so every well keeps the same gate (flag
+      `gate_corrected`);
    5. confirmation; any later gate change removes it.
 3. **Reporter (D3).** Median of the reporter channel (default R660-APC-A) per bead population and well, from
    `fs.stat` (identical to the Statistics tables).
@@ -50,14 +55,22 @@ tests) and on real experiments (not in this repository).
 
 Medians themselves always come from `fs.stat`.
 
+## Why `fs.autoGate` is not used
+
+MACSPlex bead populations are small (often 20 to 200 events per bead and well) and lie close together. On real plates,
+`fs.autoGate` around the template positions merged neighbouring beads (also with `tightness: 'tight'`); the comparison
+was sent to the maintainer separately. The alignment above keeps the template's shapes, only moves them, and is
+reproducible outside FlowState.
+
 ## Known limits
 
-- Auto-gating sparse populations that lie close together can merge them; step 3 shows it (`gate_check`).
+- The alignment corrects shifts up to about a third of a gate's width; a larger shift is corrected by dragging the gate.
 - A gate corrected for one well only cannot be seen by a plugin (API request); the method requires one gate set per
   plate.
-- Auto-gated and hand-drawn polygons follow the workspace's axis scales; changing a scale later can change counts
-  (API request: return gates with their scales).
-- The layout is pasted, not opened as a file (API request: `fs.openFile`).
+- The plugin's gates carry linear scales (strict), so they do not depend on the axis scales. A gate edited in
+  FlowState's own gating view may get the view's scales; the gate check shows such a change (`gate_corrected`).
+- The .xit and the layout are opened with a plain file input in the plugin's page (the plugin API has no file dialog
+  yet; API request `fs.openFile`). The .xit is read with `src/core/cytexpert.ts` (the CytExpert .xit import).
 
 ## References
 

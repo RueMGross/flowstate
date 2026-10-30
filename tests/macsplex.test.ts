@@ -10,6 +10,11 @@ import { contextFor } from '../src/plugins/context';
 import macsplex from '../src/plugins/macsplex';
 import {
   acquisitionTime,
+  alignPolygon,
+  draftLayout,
+  layoutToCsv,
+  pairBlanks,
+  templateFromXit,
   analyse,
   createGates,
   DEFAULT_STATE,
@@ -248,22 +253,24 @@ describe('MACSPlex calculations (validation mode, hand-computed values)', () => 
 });
 
 describe('MACSPlex gating steps', () => {
-  it('auto-gating finds every bead; one undo removes all gates', async () => {
-    // three well-separated bead clusters of 500 events (3% spread), template squares around them
+  it('aligning moves a shifted template onto the beads; one undo removes all gates', async () => {
+    // three bead clusters of 500 events (3% spread); template squares (+-15%) shifted by +0.07 decades in both channels
     reset();
     const pos: Record<string, number> = { CD9: 1000, CD63: 10000, CD81: 100000 };
     let k = 0;
     const r = () => ((k++ * 7919) % 1000) / 1000 - 0.5;
     const ev: number[][] = [];
     for (const c of Object.values(pos)) for (let i = 0; i < 500; i++) ev.push([150, 150, c * (1 + 0.06 * r()), c * (1 + 0.06 * r()), 1000]);
+    ev.push([150, 150, 5000, 5000, 1]); // a single bead between the clusters
     const data = [0, 1, 2, 3, 4].map((j) => Float32Array.from(ev.map((e) => e[j])));
     await loadFcsFiles([new File([writeFcs({ channels: CHANNELS, data, keywords: { $SMNO: 'B1' } }) as BlobPart], 'B1.fcs')]);
     const ref = st().ws.samples[0].id;
+    const f = 10 ** 0.07;
     const sq = (c: number): [number, number][] => [
-      [c * 0.85, c * 0.85],
-      [c * 1.15, c * 0.85],
-      [c * 1.15, c * 1.15],
-      [c * 0.85, c * 1.15],
+      [c * 0.85 * f, c * 0.85 * f],
+      [c * 1.15 * f, c * 0.85 * f],
+      [c * 1.15 * f, c * 1.15 * f],
+      [c * 0.85 * f, c * 1.15 * f],
     ];
     const tpl: Template = {
       source: 'synthetic',
@@ -279,27 +286,37 @@ describe('MACSPlex gating steps', () => {
         })),
       ],
     };
+    // as they are, the shifted squares miss part of each cluster
+    const s0: MacsplexState = { ...DEFAULT_STATE, template: tpl, mode: 'template' };
+    createGates(fs, s0, ref);
+    expect(fs.count(ref, fs.getState()!.beads.CD9)).toBeLessThan(500);
     const before = st().ws;
-    const s0: MacsplexState = { ...DEFAULT_STATE, template: tpl, mode: 'auto' };
-    expect(createGates(fs, s0, ref)).toEqual([]);
+    // aligned: every cluster complete, shape kept
+    expect(createGates(fs, { ...fs.getState()!, mode: 'auto' }, ref)).toEqual([]);
     const s = fs.getState()!;
-    expect(Object.keys(s.beads)).toEqual(Object.keys(pos));
     for (const b of Object.keys(pos)) expect(fs.count(ref, s.beads[b])).toBe(500);
-    expect(gateCheck(fs, s).map((x) => [x.bead, x.template_events, x.events, x.corrected])).toEqual(Object.keys(pos).map((b) => [b, 500, 500, false]));
+    const g = st().ws.populations.find((p) => p.id === s.beads.CD9)!.gate;
+    expect(g.type === 'polygon' && g.points.length).toBe(4);
+    expect(gateCheck(fs, s).map((x) => [x.bead, x.events])).toEqual(Object.keys(pos).map((b) => [b, 500]));
     st().undo();
-    expect(st().ws.populations.length).toBe(before.populations.length);
-    expect(fs.getState()?.singles ?? null).toBeNull();
+    expect(st().ws).toBe(before);
   });
 
-  it('auto-gating sparse, close beads can merge them: the gate check shows it', async () => {
-    const { sid } = await plate(40);
-    const s0: MacsplexState = { ...DEFAULT_STATE, template: TEMPLATE, mode: 'auto', layoutText: LAYOUT };
-    createGates(fs, s0, sid('B1'));
-    const check = gateCheck(fs, fs.getState()!);
-    const flagged = check.filter((x) => x.flags.includes('gate_check')).map((x) => x.bead);
-    // with 5 to 60 events per bead, the density gate of CD63 reaches into the neighbouring beads
-    expect(flagged.length).toBeGreaterThan(0);
-    for (const x of check.filter((c) => !c.flags.includes('gate_check'))) expect(x.events).toBe(x.template_events);
+  it('alignPolygon: shape kept, shift in decades, deterministic', () => {
+    const ex = Float32Array.from({ length: 200 }, (_, i) => 1000 * 10 ** (0.05 + 0.01 * (((i * 37) % 11) - 5)));
+    const ey = Float32Array.from({ length: 200 }, (_, i) => 2000 * 10 ** (-0.03 + 0.01 * (((i * 53) % 11) - 5)));
+    const sq: [number, number][] = [
+      [800, 1600],
+      [1250, 1600],
+      [1250, 2500],
+      [800, 2500],
+    ];
+    const a = alignPolygon(sq, ex, ey);
+    expect(a.n).toBe(200);
+    expect(a.dx).toBeGreaterThan(0.03);
+    expect(a.dy).toBeLessThan(0);
+    expect(a.points[1][0] / a.points[0][0]).toBeCloseTo(1250 / 800, 12); // same shape
+    expect(alignPolygon(sq, ex, ey)).toEqual(a);
   });
 
   it('a hand correction is marked and removes the confirmation', async () => {
@@ -351,10 +368,44 @@ describe('MACSPlex saved state', () => {
 describe('MACSPlex page', () => {
   it('renders without data and with results', async () => {
     reset();
-    expect(renderToString(createElement(macsplex.Page, { fs, revision: 0 }))).toContain('1. Setup');
+    expect(renderToString(createElement(macsplex.Page, { fs, revision: 0 }))).toContain('1. Template and reporter');
     await validationPlate();
     const html = renderToString(createElement(macsplex.Page, { fs, revision: 1 }));
     expect(html).toContain('Replicate groups');
     expect(html).toContain('Confirm gate set');
+    expect(html).toContain('<svg'); // the bead plot of the reference well
+    expect((html.match(/<polygon/g) ?? []).length).toBe(6); // one outline per bead gate
+  });
+});
+
+describe('MACSPlex layout tools and raw results', () => {
+  it('without a layout: medians, events and CIs only', async () => {
+    await plate();
+    const s0: MacsplexState = { ...DEFAULT_STATE, template: TEMPLATE, mode: 'template' };
+    fs.setState(s0);
+    createGates(fs, s0, st().ws.samples[0].id);
+    const r = analyse(fs, fs.getState()!);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.notes[0]).toMatch(/No plate layout yet/);
+    expect(bead(r, 'B1', 'CD41b').median).toBe(4100);
+    expect(bead(r, 'B1', 'CD41b').model_A).toBeNaN();
+    expect(r.summary).toEqual([]);
+  });
+
+  it('a starting layout from the wells, blanks paired by column, CSV round trip', async () => {
+    await plate();
+    const d = draftLayout(fs, 120);
+    expect(d.map((r) => r.well)).toEqual(['A1', 'B1', 'C1', 'A2', 'B2', 'A3', 'B3']); // column by column
+    expect(d.every((r) => r.role === 'sample' && r.planned_volume_uL === 120 && r.blank_group === '')).toBe(true);
+    const rows = d.map((r) => (r.well.startsWith('A') ? { ...r, role: 'blank' as const } : r));
+    const p = pairBlanks(rows, 'column');
+    expect(p.find((r) => r.well === 'B2')!.blank_group).toBe('blank col 2');
+    expect(p.find((r) => r.well === 'A2')!.blank_group).toBe('blank col 2');
+    expect(parseLayout(layoutToCsv(p))).toEqual({ rows: p, errors: [] });
+    expect(pairBlanks(rows, 'row').find((r) => r.well === 'B2')!.blank_group).toBe(''); // no blank in row B
+  });
+
+  it('reads a CytExpert .xit (errors are reported, not thrown)', () => {
+    expect(templateFromXit(new Uint8Array([1, 2, 3]), 'x.xit')).toMatchObject({ error: expect.stringMatching(/not a readable CytExpert experiment/) });
   });
 });

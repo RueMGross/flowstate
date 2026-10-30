@@ -3,9 +3,10 @@
 // numbers on the same gates. Each rule names the decision it implements.
 import type { GateGeom, PluginContext } from '../api';
 import { pointInPolygon } from '../../core/gating';
+import { parseCytExpertXit } from '../../core/cytexpert';
 import { DEFAULT_REPORTER, ISOTYPES, SINGLES_NAME, TETRASPANINS } from './beads';
 
-export const METHOD_VERSION = '1.1';
+export const METHOD_VERSION = '1.2';
 export const STATE_VERSION = 1;
 
 // ------------------------------------------------------------------ state (saved with the workspace)
@@ -56,7 +57,7 @@ export interface MacsplexState {
   /** reporter channel, by name or marker label (D3) */
   reporter: string;
   template: Template | null;
-  /** D2: auto-gated from the template (default) or the template gates as they are (validation mode) */
+  /** D2: template aligned to the beads of the reference well (default) or the template as it is (validation mode) */
   mode: 'auto' | 'template';
   /** population ids made by the plugin */
   singles: string | null;
@@ -182,6 +183,34 @@ export function templateFromPopulations(fs: PluginContext<MacsplexState>, single
   return { source: `populations under "${top.name}"`, gates };
 }
 
+/** The gates of a CytExpert experiment file (.xit) as a template: its top rectangle and the polygons under it. */
+export function templateFromXit(bytes: Uint8Array, fileName: string): Template | { error: string } {
+  let x;
+  try {
+    x = parseCytExpertXit(bytes);
+  } catch (e) {
+    return { error: `not a readable CytExpert experiment (${e instanceof Error ? e.message : String(e)})` };
+  }
+  const top = x.gates.find((g) => !g.parent && g.shape === 'rect');
+  if (!top) return { error: 'the experiment has no top-level rectangle gate (single beads)' };
+  const beads = x.gates.filter((g) => g.parent === top.uid && g.shape === 'polygon');
+  if (!beads.length) return { error: 'no polygon gates under the single-bead rectangle' };
+  return {
+    source: `${fileName} (${beads.length} beads)`,
+    gates: [
+      { name: SINGLES_NAME, parent: null, x: top.x, y: top.y, kind: 'rect', points: top.points.map((p) => [p[0], p[1]] as [number, number]) },
+      ...beads.map((g) => ({
+        name: g.name,
+        parent: SINGLES_NAME,
+        x: g.x,
+        y: g.y,
+        kind: 'polygon' as const,
+        points: g.points.map((p) => [p[0], p[1]] as [number, number]),
+      })),
+    ],
+  };
+}
+
 // ------------------------------------------------------------------ layout (D1)
 
 export type Role = 'sample' | 'blank' | 'unstained' | 'sa_control' | 'isotype_only' | 'empty';
@@ -261,6 +290,83 @@ export function parseLayout(text: string): { rows: LayoutRow[]; errors: string[]
     });
   });
   return { rows, errors };
+}
+
+const LAYOUT_HEAD = ['well', 'role', 'sample_id', 'condition', 'dose', 'replicate_group', 'blank_group', 'planned_volume_uL', 'failed'];
+
+/** Layout rows as CSV text (the form that is saved and shared with the Python reference). */
+export function layoutToCsv(rows: LayoutRow[]): string {
+  const q = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  return [
+    LAYOUT_HEAD.join(','),
+    ...rows.map((r) =>
+      [r.well, r.role, r.sample_id, r.condition, r.dose, r.replicate_group, r.blank_group, r.planned_volume_uL ?? '', r.failed ? 'yes' : '']
+        .map((v) => q(String(v)))
+        .join(','),
+    ),
+  ].join('\n');
+}
+
+const wellRowCol = (w: string) => {
+  const m = w.match(/^([A-P])(\d+)$/);
+  return m ? { row: m[1], col: Number(m[2]) } : null;
+};
+
+/**
+ * A starting layout from the loaded samples, to be checked and completed by the user: one row per well ($SMNO),
+ * condition = the tube name without its well, role "blank" when the name says beads only / blank / buffer, replicates
+ * = same name in the same plate column. Blank groups are left empty (see pairBlanks).
+ */
+export function draftLayout(fs: PluginContext<MacsplexState>, plannedVolume: number | null = null): LayoutRow[] {
+  const rows: LayoutRow[] = [];
+  for (const s of fs.samples()) {
+    const well = normalizeWell(s.keywords['$SMNO'] ?? s.well ?? '');
+    if (!well || rows.some((r) => r.well === well)) continue;
+    const name = (s.keywords['$TBNM'] ?? s.name).trim();
+    const condition =
+      name
+        .replace(new RegExp(`[-_ ]*${well}$`, 'i'), '')
+        .replace(/[-_ ]*[A-P]0?\d{1,2}$/, '')
+        .trim() || name;
+    const rc = wellRowCol(well);
+    rows.push({
+      well,
+      role: /beads?\s*-?only|blank|buffer/i.test(name) ? 'blank' : 'sample',
+      sample_id: '',
+      condition,
+      dose: '',
+      replicate_group: rc ? `${condition} | col ${rc.col}` : condition,
+      blank_group: '',
+      planned_volume_uL: plannedVolume,
+      failed: false,
+    });
+  }
+  const order = (w: string) => {
+    const rc = wellRowCol(w);
+    return rc ? rc.col * 100 + rc.row.charCodeAt(0) : 1e9;
+  };
+  return rows.sort((a, b) => order(a.well) - order(b.well));
+}
+
+/**
+ * Pair every non-blank well with the blank wells of the same plate column (by = 'column') or row (by = 'row'): sets
+ * blank_group for both. Wells with no blank in their column / row keep their blank group.
+ */
+export function pairBlanks(rows: LayoutRow[], by: 'column' | 'row'): LayoutRow[] {
+  const key = (w: string) => {
+    const rc = wellRowCol(w);
+    return rc ? (by === 'column' ? `col ${rc.col}` : `row ${rc.row}`) : null;
+  };
+  const withBlank = new Set(
+    rows
+      .filter((r) => r.role === 'blank')
+      .map((r) => key(r.well))
+      .filter(Boolean),
+  );
+  return rows.map((r) => {
+    const k = key(r.well);
+    return k && withBlank.has(k) ? { ...r, blank_group: `blank ${k}` } : r;
+  });
 }
 
 // ------------------------------------------------------------------ statistics helpers (D3, D13)
@@ -443,15 +549,33 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
   if (!st.singles || !fs.populations().some((p) => p.id === st.singles)) return { error: 'Create the gates first (Gating).' };
   const beads = beadNames(st);
   if (!beads.length) return { error: 'No bead gates yet (Gating).' };
-  const { rows: layout, errors } = parseLayout(st.layoutText);
-  if (errors.length) return { error: errors.join(' ') };
   const notes: string[] = [];
+  let layout: LayoutRow[];
+  if (!st.layoutText.trim()) {
+    // no layout yet: every well as a sample without blank, so medians, events and CIs are shown (no corrections)
+    layout = fs.samples().map((s) => ({
+      well: normalizeWell(s.keywords['$SMNO'] ?? '') || s.name,
+      role: 'sample' as Role,
+      sample_id: '',
+      condition: '',
+      dose: '',
+      replicate_group: '',
+      blank_group: '',
+      planned_volume_uL: null,
+      failed: false,
+    }));
+    notes.push('No plate layout yet: medians, events and CIs only; no blank subtraction, normalization or replicate summary.');
+  } else {
+    const p = parseLayout(st.layoutText);
+    if (p.errors.length) return { error: p.errors.join(' ') };
+    layout = p.rows;
+  }
 
   // D1: wells by $SMNO
   const samples = fs.samples();
   const byWell = new Map<string, (typeof samples)[number]>();
   for (const s of samples) {
-    const w = normalizeWell(s.keywords['$SMNO'] ?? '');
+    const w = normalizeWell(s.keywords['$SMNO'] ?? '') || (st.layoutText.trim() ? '' : s.name);
     if (!w) continue;
     if (byWell.has(w)) return { error: `Two samples for well ${w} ($SMNO).` };
     byWell.set(w, s);
@@ -653,7 +777,7 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
   const run: Record<string, string | number> = {
     method_version: METHOD_VERSION,
     plugin_version: fs.plugin.version,
-    gate_source: `${st.mode === 'template' ? 'template gates as they are (validation mode)' : 'auto-gated from the template'}; template: ${st.template?.source ?? 'none'}`,
+    gate_source: `${st.mode === 'template' ? 'template gates as they are (validation mode)' : 'template aligned to the beads of the reference well'}; template: ${st.template?.source ?? 'none'}`,
     reference_well: ref ? normalizeWell(ref.keywords['$SMNO'] ?? '') || ref.name : '',
     gates_confirmed: st.confirmed && st.confirmed.signature === gateSignature(fs, st) ? st.confirmed.at : '',
     wells: W.length,
@@ -672,14 +796,66 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
 
 const LIN = { type: 'linear' as const, min: 0, max: 16777215 };
 
-function centroid(pts: [number, number][]): [number, number] {
-  return [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length];
+export interface AlignOptions {
+  /** search area: the polygon enlarged around its centre by this factor (log space) */
+  enlarge: number;
+  iterations: number;
+  /** stop when a step moves less than this (decades) */
+  tolerance: number;
+}
+export const ALIGN: AlignOptions = { enlarge: 1.3, iterations: 5, tolerance: 0.002 };
+
+const log10c = (v: number) => Math.log10(Math.max(v, 1));
+const median64 = (v: number[]) => {
+  const s = [...v].sort((a, b) => a - b);
+  const n = s.length;
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+};
+
+/**
+ * D2 step 2: move a template polygon onto its bead population without changing its shape. In log10 space (values
+ * below 1 count as 1), repeatedly: take the events inside the polygon enlarged by `enlarge` around its centre (vertex
+ * mean), and move the polygon so its centre lies on their median position. Deterministic; the Python reference does
+ * the same. Returns the moved polygon (raw values) and the total shift in decades.
+ */
+export function alignPolygon(
+  points: [number, number][],
+  ex: Float32Array,
+  ey: Float32Array,
+  o: AlignOptions = ALIGN,
+): { points: [number, number][]; dx: number; dy: number; n: number } {
+  const lx = Float64Array.from(ex, log10c);
+  const ly = Float64Array.from(ey, log10c);
+  let P = points.map(([x, y]) => [log10c(x), log10c(y)]);
+  let dx = 0;
+  let dy = 0;
+  let n = 0;
+  for (let it = 0; it < o.iterations; it++) {
+    const cx = P.reduce((a, p) => a + p[0], 0) / P.length;
+    const cy = P.reduce((a, p) => a + p[1], 0) / P.length;
+    const xs = Float64Array.from(P, (p) => cx + o.enlarge * (p[0] - cx));
+    const ys = Float64Array.from(P, (p) => cy + o.enlarge * (p[1] - cy));
+    const sx: number[] = [];
+    const sy: number[] = [];
+    for (let i = 0; i < lx.length; i++) if (pointInPolygon(lx[i], ly[i], xs, ys)) (sx.push(lx[i]), sy.push(ly[i]));
+    n = sx.length;
+    if (n < 3) break;
+    const sdx = median64(sx) - cx;
+    const sdy = median64(sy) - cy;
+    P = P.map(([x, y]) => [x + sdx, y + sdy]);
+    dx += sdx;
+    dy += sdy;
+    if (Math.abs(sdx) < o.tolerance && Math.abs(sdy) < o.tolerance) break;
+  }
+  const fx = 10 ** dx;
+  const fy = 10 ** dy;
+  return { points: points.map(([x, y]) => [x * fx, y * fy]), dx, dy, n };
 }
 
 /**
- * Steps 1 and 2: the singles rectangle from the template, then every bead either auto-gated around its template
- * position in the reference well (mode 'auto') or as its template polygon (mode 'template', validation). Replaces the
- * plugin's earlier gates. One undo step. Returns notes (beads not found).
+ * Steps 1 and 2: the singles rectangle from the template, then every bead's template polygon, moved onto its bead
+ * population in the reference well (mode 'auto', see alignPolygon) or as it is (mode 'template', validation). Gates
+ * are evaluated in linear space, exactly as the template. Replaces the plugin's earlier gates; one undo step.
  */
 export function createGates(fs: PluginContext<MacsplexState>, st: MacsplexState, referenceId: string): string[] {
   const t = st.template;
@@ -708,14 +884,17 @@ export function createGates(fs: PluginContext<MacsplexState>, st: MacsplexState,
         notes.push(`${g.name}: channels ${g.x} / ${g.y} not found.`);
         continue;
       }
-      const gate: GateGeom | null =
-        st.mode === 'template'
-          ? { type: 'polygon', x, y, points: g.points.map((p) => [p[0], p[1]]), scales: { x: LIN, y: LIN }, strict: true }
-          : fs.autoGate({ sampleId: referenceId, parent: singles, x, y, seed: centroid(g.points) });
-      if (!gate) {
-        notes.push(`${g.name}: auto-gating found no population at its template position; draw it by hand or check the template.`);
-        continue;
+      let pts = g.points.map((p) => [p[0], p[1]] as [number, number]);
+      if (st.mode === 'auto') {
+        const ex = fs.events(referenceId, x, singles);
+        const ey = fs.events(referenceId, y, singles);
+        if (ex && ey) {
+          const a = alignPolygon(pts, ex, ey);
+          if (a.n >= 3) pts = a.points;
+          else notes.push(`${g.name}: too few events near its template position in the reference well; template position kept.`);
+        }
       }
+      const gate: GateGeom = { type: 'polygon', x, y, points: pts, scales: { x: LIN, y: LIN }, strict: true };
       beads[g.name] = fs.addGate({ name: g.name, parent: singles, gate });
       created[g.name] = gate;
     }

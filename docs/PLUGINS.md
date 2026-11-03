@@ -78,11 +78,13 @@ shows an error in its page; the rest of the app keeps working.
 | --- | --- |
 | `samples()` | samples with name, file, event count, whether loaded, FCS keywords, groups, plate, well and the plate layout's annotations of the well (e.g. standard concentrations) |
 | `channels()`, `findChannel(q)` | channels with marker labels; find one by name or marker ("APC-A", "CD63") |
-| `populations()`, `groups()` | the gating tree (id, name, parent, path, gate) and the groups |
+| `populations()`, `groups()` | the gating tree (id, name, parent, path, shared gate, samples with their own gate) and the groups |
+| `gateFor(population, sample)` | the gate as it applies to a sample: its own gate (made in the app with "Adjust for this sample") or the shared one |
 | `stat(sample, population, stat, channel?, percentile?)` | a statistic exactly as the Statistics tables compute it: `count`, `freqParent`, `freqTotal`, `median`, `mean`, `geomean`, `sd`, `cv`, `rsd`, `rcv`, `percentile`, `mode`, `min`, `max`; NaN when it does not apply |
 | `count(sample, population?)` | event count (null when not loaded / not applicable) |
 | `events(sample, channel, population?)` | the population's values of a channel (compensated as the sample is), for your own calculations |
 | `addGate`, `setGate`, `removePopulation` | gates as in the app (raw channel values; types in `src/core/model.ts`, `GateGeom`) |
+| `clearSampleGate(population, sample)` | remove a sample's own gate, so the shared gate applies to it again |
 | `autoGate({ sampleId, x, y, seed })` | the app's auto gate around a seed point (raw values): the bead population there, as a gate to add |
 | `transaction(fn)` | everything `fn` changes is one undo step |
 | `getState()`, `setState(v)` | the plugin's own settings / results, saved with the workspace (plain JSON) |
@@ -98,7 +100,9 @@ The example plugin walks through the usual steps; each is one call or a few:
 1. **Find the bead populations.** For a fixed bead layout, store the expected bead positions (raw values on the two
    bead-ID channels) and call `fs.autoGate` once per bead in a reference sample, then `fs.addGate`, all inside one
    `fs.transaction`. Gates can also be drawn by hand in the app; the plugin then lets the user pick them.
-2. **Read the reporter.** `fs.stat(sample, bead, 'median', reporter)` per sample and bead population.
+2. **Read the reporter.** `fs.stat(sample, bead, 'median', reporter)` per sample and bead population. A method with
+   one gate set per plate should check `population.sampleGates` (the bead gates and their parents): a gate adjusted for
+   one sample in the app changes that sample only.
 3. **Blanks, standards, unknowns.** Let the user choose blank samples, or read roles and standard concentrations from
    the plate layout (`sample.annotations`, filled in the Plates view).
 4. **Background subtraction and normalization** (e.g. to the mean of reference beads), in plain TypeScript.

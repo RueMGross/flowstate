@@ -555,7 +555,8 @@ function matrixEqual(a: CompDef, ch: string[], m: number[][]) {
   return a.matrix.every((row, i) => row.every((v, j) => Math.abs(v - m[i][j]) < 1e-9));
 }
 
-const INFO_KEYS: [string, string][] = [
+/** FCS keywords kept with a sample in the workspace (sample.info), under these labels */
+export const INFO_KEYS: [string, string][] = [
   ['$DATE', 'Date'],
   ['$CYT', 'Cytometer'],
   ['$SRC', 'Source'],
@@ -566,6 +567,7 @@ const INFO_KEYS: [string, string][] = [
   ['CREATOR', 'Software'],
   ['$OP', 'Operator'],
   ['$VOL', 'Volume'],
+  ['$SMNO', 'Sample no.'],
   ['WELL ID', 'Well'],
   ['$TBNM', 'Tube'],
   [TABLE_ORIGIN_KEY, 'Origin'],

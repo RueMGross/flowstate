@@ -123,6 +123,43 @@ describe('plugin context on real data', () => {
     expect(fs.populations().map((p) => p.path)).toEqual(['Bead A']);
   });
 
+  it('sample-specific gates: listed, read with gateFor, cleared with clearSampleGate', async () => {
+    const { blank, sample } = await beads();
+    const a = fs.addGate({ name: 'Bead A', gate: rect(1000, 4000) });
+    expect(fs.populations()[0].sampleGates).toEqual([]);
+    expect(fs.gateFor(a, sample)).toEqual(rect(1000, 4000));
+    // "Adjust for this sample" in the app: the blank gets its own (empty) gate
+    st().update((w) => void (w.populations[0].overrides = { [blank]: rect(50000, 60000), 'gone-sample': rect(0, 1) }));
+    expect(fs.populations()[0].sampleGates).toEqual([blank]);
+    expect(fs.gateFor(a, blank)).toEqual(rect(50000, 60000));
+    expect(fs.gateFor(a, sample)).toEqual(rect(1000, 4000));
+    expect(fs.count(blank, a)).toBe(0);
+    expect(fs.gateFor('no-such-pop', sample)).toBeNull();
+    expect(fs.gateFor(a, 'no-such-sample')).toBeNull();
+    // a population scoped to one sample does not apply to the other
+    st().update((w) => void (w.populations[0].scope = { samples: [sample] }));
+    expect(fs.gateFor(a, blank)).toBeNull();
+    st().update((w) => void delete w.populations[0].scope);
+    const before = st().ws;
+    fs.clearSampleGate(a, sample); // has none: nothing happens
+    expect(st().ws).toBe(before);
+    fs.clearSampleGate(a, blank);
+    expect(fs.populations()[0].sampleGates).toEqual([]);
+    expect(fs.count(blank, a)).toBe(1000);
+    st().undo();
+    expect(fs.populations()[0].sampleGates).toEqual([blank]);
+    expect(() => fs.clearSampleGate('no-such-pop', blank)).toThrow(/No population/);
+  });
+
+  it('keywords of samples whose files are not loaded keep their FCS keys', async () => {
+    const { sample } = await beads();
+    st().update((w) => void (w.samples.find((s) => s.id === sample)!.info = { Date: '28-Oct-2026', Start: '10:11:12', Volume: '30000', 'Sample no.': 'B6' }));
+    engine.removeSample(sample);
+    const s = fs.samples().find((x) => x.id === sample)!;
+    expect(s.loaded).toBe(false);
+    expect(s.keywords).toEqual({ $DATE: '28-Oct-2026', $BTIM: '10:11:12', $VOL: '30000', $SMNO: 'B6' });
+  });
+
   it('refuses invalid gates and parents', async () => {
     await beads();
     expect(() => fs.addGate({ name: 'X', gate: { type: 'rect' } as never })).toThrow(/Invalid gate/);

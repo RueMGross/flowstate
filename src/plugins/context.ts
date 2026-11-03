@@ -8,12 +8,26 @@ import { gather } from '../core/stats';
 import { makeScale } from '../core/transforms';
 import { saveFile } from '../io/files';
 import { writeXlsxBook } from '../io/xlsx';
-import { addPopulation, deletePopulation, runAs, useStore } from '../state/store';
+import { INFO_KEYS, addPopulation, deletePopulation, runAs, useStore } from '../state/store';
 import { csvLine } from '../ui/calib/util';
 import { autoGateAt, autoSession, commitGate } from '../ui/gateOps';
 import type { AutoGateRequest, FlowStatePlugin, PluginChannel, PluginContext, PluginPopulation, PluginSample } from './api';
 
 const ws = (): Workspace => useStore.getState().ws;
+
+/** the keywords kept with the workspace (sample.info, e.g. { Date, Start }) under their FCS keys ($DATE, $BTIM) */
+function keptKeywords(info: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (info) for (const [k, label] of INFO_KEYS) if (info[label] !== undefined && out[k] === undefined) out[k] = info[label];
+  return out;
+}
+
+/** populations of a quadrant / split group (same parent, type and group id), else just the population */
+function gateGroup(w: Workspace, p: Population): Population[] {
+  const g = p.gate;
+  if (g.type !== 'quadrant' && g.type !== 'split') return [p];
+  return w.populations.filter((q) => q.parentId === p.parentId && q.gate.type === g.type && (q.gate as { groupId: string }).groupId === g.groupId);
+}
 
 /** a population id of the API (null / undefined / 'root' = All Events) that exists, or null */
 function popRef(w: Workspace, id: string | null | undefined): string | null {
@@ -82,7 +96,7 @@ export function contextFor<S>(plugin: FlowStatePlugin<S>): PluginContext<S> {
           fileName: s.fileName,
           eventCount: engine.has(s.id) ? engine.eventCount(s.id) : s.eventCount,
           loaded: engine.has(s.id),
-          keywords: { ...(engine.keywordsOf(s.id) ?? s.info ?? {}) },
+          keywords: { ...(engine.keywordsOf(s.id) ?? keptKeywords(s.info)) },
           groups: w.groups.filter((g) => g.sampleIds.includes(s.id)).map((g) => g.name),
           plate: s.plate,
           well: s.well,
@@ -107,7 +121,23 @@ export function contextFor<S>(plugin: FlowStatePlugin<S>): PluginContext<S> {
 
     populations(): PluginPopulation[] {
       const w = ws();
-      return treeOrder(w).map((p) => ({ id: p.id, name: p.name, parentId: p.parentId, path: pathOf(w, p), gate: p.gate, color: p.color }));
+      const known = new Set(w.samples.map((s) => s.id));
+      return treeOrder(w).map((p) => ({
+        id: p.id,
+        name: p.name,
+        parentId: p.parentId,
+        path: pathOf(w, p),
+        gate: p.gate,
+        sampleGates: Object.keys(p.overrides ?? {}).filter((sid) => known.has(sid)),
+        color: p.color,
+      }));
+    },
+
+    gateFor(population, sampleId) {
+      const w = ws();
+      const p = popById(w, population);
+      if (!p || !w.samples.some((s) => s.id === sampleId) || !engine.applies(w, sampleId, p.id)) return null;
+      return p.overrides?.[sampleId] ?? p.gate;
     },
 
     groups() {
@@ -147,6 +177,21 @@ export function contextFor<S>(plugin: FlowStatePlugin<S>): PluginContext<S> {
     setGate(population, gate, sampleId) {
       if (!popById(ws(), population)) throw new Error(`No population "${population}"`);
       commitGate(population, checkedGate(gate), sampleId ?? null, `plugin-gate:${id}:${population}`);
+    },
+
+    clearSampleGate(population, sampleId) {
+      const w = ws();
+      const p = popById(w, population);
+      if (!p) throw new Error(`No population "${population}"`);
+      const ids = new Set(gateGroup(w, p).map((q) => q.id));
+      if (![...ids].some((i) => popById(w, i)?.overrides?.[sampleId])) return;
+      useStore.getState().update((d) => {
+        for (const q of d.populations) {
+          if (!ids.has(q.id) || !q.overrides) continue;
+          delete q.overrides[sampleId];
+          if (!Object.keys(q.overrides).length) delete q.overrides;
+        }
+      }, `plugin-gate:${id}:${population}:${sampleId}`);
     },
 
     removePopulation(population) {

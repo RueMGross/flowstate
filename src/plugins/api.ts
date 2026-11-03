@@ -56,7 +56,10 @@ export interface PluginSample {
   eventCount: number;
   /** whether its events are loaded (a workspace opened without its FCS files lists samples that are not) */
   loaded: boolean;
-  /** FCS keywords (upper-case keys, e.g. "$DATE", "$CYT", "$WELLID") when loaded, else the few kept with the workspace */
+  /**
+   * FCS keywords (upper-case keys, e.g. "$DATE", "$CYT", "$WELLID") when loaded, else the few kept with the workspace
+   * ($DATE, $BTIM, $ETIM, $VOL, $SMNO, $FIL, $CYT ...; same keys)
+   */
   keywords: Readonly<Record<string, string>>;
   /** names of the groups the sample belongs to */
   groups: string[];
@@ -85,8 +88,13 @@ export interface PluginPopulation {
   parentId: string | null;
   /** "Beads/Singlets/CD63" (names from the top) */
   path: string;
-  /** the gate (raw channel values; see GateGeom in core/model.ts) */
+  /** the shared gate (raw channel values; see GateGeom in core/model.ts) */
   gate: Readonly<GateGeom>;
+  /**
+   * samples with their own gate for this population (made in the app with "Adjust for this sample"): for them, gateFor
+   * gives that gate instead of the shared one. Empty when every sample uses the shared gate.
+   */
+  sampleGates: string[];
   color: string;
 }
 
@@ -122,6 +130,12 @@ export interface PluginContext<S = unknown> {
   findChannel(nameOrMarker: string): string | null;
   /** populations in tree order (parents before children) */
   populations(): PluginPopulation[];
+  /**
+   * The gate of a population as it applies to a sample: the sample's own gate when it has one (see
+   * PluginPopulation.sampleGates), else the shared gate. Null when the population does not exist or does not apply to
+   * the sample. A population's events also depend on its ancestors' gates: check those with gateFor too.
+   */
+  gateFor(population: string, sampleId: string): GateGeom | null;
   /** groups with their samples */
   groups(): { id: string; name: string; sampleIds: string[] }[];
   /**
@@ -144,6 +158,11 @@ export interface PluginContext<S = unknown> {
   addGate(spec: { name: string; parent?: string | null; gate: GateGeom; color?: string }): string;
   /** Replace a population's gate (with `sampleId`: its sample-specific gate there when it has one, else the shared gate). */
   setGate(population: string, gate: GateGeom, sampleId?: string): void;
+  /**
+   * Remove a sample's own gate of a population, so the shared gate applies to it again (quadrant and split gates: of all
+   * regions of the group). Nothing happens when it has none.
+   */
+  clearSampleGate(population: string, sampleId: string): void;
   /** Delete a population with its subpopulations. */
   removePopulation(population: string): void;
   /**

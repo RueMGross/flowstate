@@ -7,6 +7,7 @@ import { decodeEntities } from '../core/xml';
 import { eventTableDataset, looksLikeEventTable, parseEventStream } from '../core/eventtable';
 import { matrixToText, readMatrixFile, sniffMatrix, type ChannelRef } from '../core/matrixio';
 import { exportGatingMLDoc, importGatingML, instrumentDependentGates, type GmlExport } from '../core/gatingml';
+import { cytExpertXitPopulations, parseCytExpertXit } from '../core/cytexpert';
 import { flowJoChannelRenames, importFlowJo, isFlowJoWorkspaceXml, renameWorkspaceChannels } from '../core/flowjo';
 import { APP_NAME, LEGACY_APP_NAMES, WORKSPACE_VERSION, type CompDef, type ExperimentSetup, type GateGeom, type SampleChannel, type Workspace, emptyWorkspace, uid, GATE_COLORS } from '../core/model';
 import { DEMO_NAME } from '../state/demo';
@@ -307,10 +308,12 @@ export async function openFiles(files: File[]) {
   const flowjo: { name: string; text: string }[] = [];
   const matrices: File[] = [];
   const tables: File[] = [];
+  const xits: File[] = [];
   for (const f of files) {
     const n = f.name.toLowerCase();
     try {
-      if (/\.(csv|tsv|txt|mtx|comp)$/.test(n)) {
+      if (n.endsWith('.xit')) xits.push(f);
+      else if (/\.(csv|tsv|txt|mtx|comp)$/.test(n)) {
         const kind = await sniffTableFile(f);
         if (kind === 'matrix') matrices.push(f);
         else if (kind === 'events') tables.push(f);
@@ -356,6 +359,39 @@ export async function openFiles(files: File[]) {
   if (tables.length) await loadEventTables(tables);
   // after the data: matrix names are matched to the channels of the loaded samples
   if (matrices.length) await importMatrixFiles(matrices);
+  // after the data as well: gate parameters are matched to the samples' channels, tube shapes to the samples
+  for (const f of xits) {
+    try {
+      importCytExpertXit(new Uint8Array(await f.arrayBuffer()), f.name);
+    } catch (e) {
+      st.toast(`${f.name}: ${readableError(e)}`, 'error');
+    }
+  }
+}
+
+/** Add the gates of a CytExpert experiment file (.xit) to the workspace (see core/cytexpert.ts). */
+export function importCytExpertXit(bytes: Uint8Array, fileName = 'CytExpert experiment') {
+  const st = useStore.getState();
+  const content = parseCytExpertXit(bytes);
+  const ws0 = st.ws;
+  const samples = ws0.samples.map((s) => ({ id: s.id, fileName: s.fileName }));
+  const res = cytExpertXitPopulations(content, workspaceChannels(ws0), samples);
+  if (!res.populations.length) throw new Error(`no gates that can be imported${res.warnings.length ? ` (${res.warnings.join('; ')})` : ''}.`);
+  const have = new Set(ws0.populations.map((p) => p.name));
+  const dup = res.populations.filter((p) => have.has(p.name)).length;
+  if (dup) res.warnings.unshift(`${dup} of the imported gates have the names of gates already in the analysis (imported twice?); both are kept`);
+  st.update((ws) => {
+    for (const p of res.populations) ws.populations.push(p);
+  });
+  const w = res.warnings;
+  const nOver = res.populations.reduce((a, p) => a + Object.keys(p.overrides ?? {}).length, 0);
+  st.toast(
+    `Imported ${res.populations.length} gates from ${fileName}${nOver ? ` (${nOver} tube-specific gate positions)` : ''}.${w.length ? ` ${w.slice(0, 2).join(' · ')}${w.length > 2 ? ` (${w.length - 2} more notes in the browser console)` : ''}` : ''}`,
+    w.length ? 'info' : 'success',
+  );
+  if (w.length) console.warn(w);
+  const gm = gateChannelsMissing(useStore.getState().ws);
+  if (gm.size) warnMissingGateChannels(gm);
 }
 
 // ------------------------------------------------------------ event tables (CSV) and compensation matrix files

@@ -2,6 +2,7 @@
 // (the same design and expected numbers as the Python reference's tests), the gating steps (auto gate, one undo,
 // hand correction, confirmation), saved state, layout parsing. Synthetic data only.
 import { createElement } from 'react';
+import { vi } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { engine } from '../src/core/engine';
 import { writeFcs } from '../src/core/fcs';
@@ -10,6 +11,8 @@ import { contextFor } from '../src/plugins/context';
 import macsplex from '../src/plugins/macsplex';
 import {
   acquisitionTime,
+  polygonCentroid,
+  usePlateGates,
   alignPolygon,
   draftLayout,
   layoutToCsv,
@@ -102,7 +105,8 @@ function wellFile(well: string, apc: Record<string, number>, volNl: number, btim
     }
   }
   const data = [0, 1, 2, 3, 4].map((c) => Float32Array.from(ev.map((e) => e[c])));
-  const kw = { $SMNO: well, $VOL: String(volNl), $BTIM: btim, $DATE: '29-Oct-2026' };
+  const kw: Record<string, string> = { $SMNO: well, $BTIM: btim, $DATE: '29-Oct-2026' };
+  if (Number.isFinite(volNl)) kw.$VOL = String(volNl);
   return new File([writeFcs({ channels: CHANNELS, data, keywords: kw }) as BlobPart], `${well}.fcs`);
 }
 
@@ -139,7 +143,7 @@ async function validationPlate(extra: Partial<MacsplexState> = {}) {
   const { sid } = await plate();
   const s0: MacsplexState = { ...DEFAULT_STATE, template: TEMPLATE, mode: 'template', layoutText: LAYOUT, ...extra };
   fs.setState(s0);
-  expect(createGates(fs, s0, sid('A2'))).toEqual([]);
+  expect(createGates(fs, s0, sid('A2'))).toEqual({ notes: [] });
   const s = fs.getState()!;
   const r = analyse(fs, s);
   if ('error' in r) throw new Error(r.error);
@@ -247,7 +251,7 @@ describe('MACSPlex calculations (validation mode, hand-computed values)', () => 
 
   it('layout and samples must match', async () => {
     const { s } = await validationPlate();
-    expect(analyse(fs, { ...s, layoutText: LAYOUT + '\nH12,sample,,,,g,bl,120,' })).toEqual({ error: 'Layout wells without a loaded sample: H12.' });
+    expect(analyse(fs, { ...s, layoutText: LAYOUT + '\nH12,sample,,,,g,bl,120,' })).toEqual({ error: 'Layout wells without a sample: H12.' });
     expect(analyse(fs, { ...s, layoutText: LAYOUT.split('\n').slice(0, -1).join('\n') })).toEqual({ error: 'Samples for wells not in the layout: C1.' });
   });
 });
@@ -292,7 +296,7 @@ describe('MACSPlex gating steps', () => {
     expect(fs.count(ref, fs.getState()!.beads.CD9)).toBeLessThan(500);
     const before = st().ws;
     // aligned: every cluster complete, shape kept
-    expect(createGates(fs, { ...fs.getState()!, mode: 'auto' }, ref)).toEqual([]);
+    expect(createGates(fs, { ...fs.getState()!, mode: 'auto' }, ref)).toEqual({ notes: [] });
     const s = fs.getState()!;
     for (const b of Object.keys(pos)) expect(fs.count(ref, s.beads[b])).toBe(500);
     const g = st().ws.populations.find((p) => p.id === s.beads.CD9)!.gate;
@@ -417,5 +421,133 @@ describe('MACSPlex layout tools and raw results', () => {
 
   it('reads a CytExpert .xit (errors are reported, not thrown)', () => {
     expect(templateFromXit(new Uint8Array([1, 2, 3]), 'x.xit')).toMatchObject({ error: expect.stringMatching(/not a readable CytExpert experiment/) });
+  });
+});
+
+describe('MACSPlex after review (method v1.3 and fixes)', () => {
+  it('a well with its own gate is flagged, resets the confirmation, and gets the plate gate back', async () => {
+    const { s, sid } = await validationPlate();
+    const sig = gateSignature(fs, s);
+    fs.setState({ ...s, confirmed: { at: 'x', signature: sig } });
+    const g = st().ws.populations.find((p) => p.id === s.beads.CD9)!.gate;
+    if (g.type !== 'polygon') throw new Error('polygon expected');
+    // an own gate for B2, as the app's "Adjust for this sample" makes it (fs.setGate with a sampleId only changes an
+    // existing own gate)
+    st().update((ws) => {
+      const p = ws.populations.find((q) => q.id === s.beads.CD9)!;
+      p.overrides = { [sid('B2')]: { ...g, points: g.points.map(([x, y]) => [x * 1.05, y] as [number, number]) } };
+    }, 'test-own-gate');
+    expect(gateSignature(fs, fs.getState()!)).not.toBe(sig);
+    const r = analyse(fs, fs.getState()!);
+    if ('error' in r) throw new Error(r.error);
+    expect(flagSet(bead(r, 'B2', 'CD9').flags).has('own_gate')).toBe(true);
+    expect(flagSet(bead(r, 'B1', 'CD9').flags).has('own_gate')).toBe(false);
+    expect(flagSet(r.wells.find((w) => w.well === 'B2')!.flags).has('own_gate')).toBe(true);
+    expect(r.run.gates_confirmed).toBe('');
+    expect(gateCheck(fs, fs.getState()!).find((x) => x.bead === 'CD9')!.flags).toContain('own_gate');
+    expect(usePlateGates(fs, fs.getState()!, sid('B2'))).toBe(1);
+    const r2 = analyse(fs, fs.getState()!);
+    expect('error' in r2 ? 'x' : r2.wells.find((w) => w.well === 'B2')!.flags).not.toContain('own_gate');
+  });
+
+  it('missing channels or reference: an error, and the old gates stay', async () => {
+    const { s } = await validationPlate();
+    const bad: Template = { ...TEMPLATE, gates: TEMPLATE.gates.map((g) => (g.name === 'CD9' ? { ...g, x: 'NOPE-A' } : g)) };
+    expect(createGates(fs, { ...s, template: bad }, st().ws.samples[0].id)).toEqual({
+      error: 'Channels not found in the samples: NOPE-A. No gates were changed.',
+    });
+    expect(st().ws.populations.some((p) => p.id === s.singles)).toBe(true);
+    expect(createGates(fs, { ...s, mode: 'auto' }, 'no-such-sample')).toMatchObject({ error: expect.stringMatching(/reference well is not loaded/) });
+    expect(st().ws.populations.some((p) => p.id === s.beads.CD9)).toBe(true);
+  });
+
+  it('a deleted singles gate fails the gate check instead of passing silently', async () => {
+    const { s } = await validationPlate();
+    fs.removePopulation(s.singles!);
+    const c = gateCheck(fs, s);
+    expect(c.length).toBe(6);
+    expect(c.every((x) => x.flags.includes('gate_missing') && x.flags.includes('gate_check'))).toBe(true);
+  });
+
+  it('a template whose top rectangle has another name', async () => {
+    const { sid } = await plate();
+    const t: Template = { ...TEMPLATE, gates: TEMPLATE.gates.map((g) => (g.parent === null ? { ...g, name: 'Singlets' } : { ...g, parent: 'Singlets' })) };
+    const s0: MacsplexState = { ...DEFAULT_STATE, template: t, mode: 'template', layoutText: LAYOUT };
+    expect(createGates(fs, s0, sid('A2'))).toEqual({ notes: [] });
+    expect(Object.keys(fs.getState()!.beads).length).toBe(6);
+    expect(st().ws.populations.find((p) => p.id === fs.getState()!.singles)!.name).toBe('Singlets');
+  });
+
+  it('alignment uses the area centroid: extra vertices on one edge do not move a gate that fits', () => {
+    // beads centred at (1000, 1000) in log space; the square around them gets 5 extra vertices on its right edge
+    const ex = Float32Array.from({ length: 400 }, (_, i) => 1000 * 10 ** (0.02 * (((i * 37) % 21) / 10 - 1)));
+    const ey = Float32Array.from({ length: 400 }, (_, i) => 1000 * 10 ** (0.02 * (((i * 53) % 21) / 10 - 1)));
+    const lo = 1000 / 10 ** 0.06;
+    const hi = 1000 * 10 ** 0.06;
+    const right = [0.2, 0.35, 0.5, 0.65, 0.8].map((f) => [hi, lo * (hi / lo) ** f] as [number, number]);
+    const sq: [number, number][] = [[lo, lo], [hi, lo], ...right, [hi, hi], [lo, hi]];
+    const c = polygonCentroid(sq.map(([x, y]) => [Math.log10(x), Math.log10(y)]));
+    expect(c[0]).toBeCloseTo(3, 12);
+    expect(c[1]).toBeCloseTo(3, 12);
+    const a = alignPolygon(sq, ex, ey);
+    expect(Math.abs(a.dx)).toBeLessThan(0.005);
+    expect(Math.abs(a.dy)).toBeLessThan(0.005);
+    // a polygon touching values <= 1 is not aligned
+    expect(
+      alignPolygon(
+        [
+          [0.5, 10],
+          [100, 10],
+          [100, 100],
+        ],
+        ex,
+        ey,
+      ).refused,
+    ).toMatch(/at or below 1/);
+  });
+
+  it('method v1.3: failed blanks and unstained wells left out; n = values used; no_volume; empty wells not in the trend', async () => {
+    const lay = LAYOUT.replace('A3,blank,,,,,bl,120,', 'A3,blank,,,,,bl,120,yes').replace('B3,sample,s1,,,g,bl,120,', 'B3,sample,s1,,,g,,120,');
+    const { r } = await validationPlate({ layoutText: lay });
+    // blank mean of A1 (90) and A2 (100) only: 95
+    expect(bead(r, 'B1', 'CD9').blank_mean).toBeCloseTo(95, 9);
+    expect(bead(r, 'B1', 'CD9').model_A).toBeCloseTo(1005, 9);
+    // B3 has no blank group: no model A, so n counts B1 and B2 only
+    const g = r.summary.find((x) => x.group === 'g' && x.bead === 'CD41b')!;
+    expect(g.n).toBe(2);
+    expect(g.mean_A).toBeCloseTo((4005 + 4105) / 2, 9);
+    // empty wells are left out of the order trend
+    const e = await validationPlate({ layoutText: LAYOUT.replace('C1,unstained,s1,,,u,bl,120,', 'C1,empty,,,,,,120,') });
+    const ws = e.r.wells.filter((w) => w.role !== 'empty');
+    expect(e.r.run.order_rho).toBeCloseTo(
+      spearman(
+        ws.map((w) => w.acq_order),
+        ws.map((w) => w.single_beads),
+      ),
+      12,
+    );
+  });
+
+  it('no_volume when $VOL is missing; $BTIM in sixtieths (FCS 3.0)', async () => {
+    reset();
+    await loadFcsFiles([wellFile('A1', base, NaN, '10:00:00')]);
+    const s0: MacsplexState = { ...DEFAULT_STATE, template: TEMPLATE, mode: 'template' };
+    fs.setState(s0);
+    createGates(fs, s0, st().ws.samples[0].id);
+    const r = analyse(fs, fs.getState()!);
+    expect('error' in r ? '' : r.wells[0].flags).toContain('no_volume');
+    expect(acquisitionTime('29-Oct-2026', '10:00:00:30') - acquisitionTime('29-Oct-2026', '10:00:00')).toBeCloseTo(500, 9);
+    expect(acquisitionTime('29-Oct-2026', '10:00:00.30') - acquisitionTime('29-Oct-2026', '10:00:00')).toBeCloseTo(300, 9);
+  });
+
+  it('the gate check reads each well once and caches the template statistics', async () => {
+    const { s } = await validationPlate();
+    const spy = vi.spyOn(fs, 'events');
+    gateCheck(fs, s);
+    const first = spy.mock.calls.length;
+    expect(first).toBeLessThanOrEqual(7 * 3); // 7 wells x (x, y, reporter)
+    gateCheck(fs, s);
+    expect(spy.mock.calls.length).toBe(first); // second check: no events read again
+    spy.mockRestore();
   });
 });

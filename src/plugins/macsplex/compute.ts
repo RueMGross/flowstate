@@ -6,7 +6,7 @@ import { pointInPolygon } from '../../core/gating';
 import { parseCytExpertXit } from '../../core/cytexpert';
 import { DEFAULT_REPORTER, ISOTYPES, SINGLES_NAME, TETRASPANINS } from './beads';
 
-export const METHOD_VERSION = '1.2';
+export const METHOD_VERSION = '1.3';
 export const STATE_VERSION = 1;
 
 // ------------------------------------------------------------------ state (saved with the workspace)
@@ -73,6 +73,8 @@ export interface MacsplexState {
   /** D7: model B on/off */
   modelB: boolean;
   limits: Limits;
+  /** how the current gates were made (for the run record) */
+  gateSource?: string;
 }
 
 export const DEFAULT_STATE: MacsplexState = {
@@ -136,6 +138,7 @@ export function parseState(raw: unknown): MacsplexState | null {
     layoutText: str(raw.layoutText, ''),
     modelB: raw.modelB === true,
     limits,
+    ...(typeof raw.gateSource === 'string' ? { gateSource: raw.gateSource } : {}),
   };
 }
 
@@ -471,11 +474,13 @@ const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', '
 /** FCS $DATE (dd-mmm-yyyy) and $BTIM (hh:mm:ss[.cc]) as a time in ms; NaN when not readable. */
 export function acquisitionTime(date: string, btim: string): number {
   const d = date.trim().match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/);
-  const t = btim.trim().match(/^(\d{1,2}):(\d{2}):(\d{2})(?:[.:](\d+))?$/);
+  const t = btim.trim().match(/^(\d{1,2}):(\d{2}):(\d{2})(?:([.:])(\d+))?$/);
   if (!t) return NaN;
   const day = d ? Date.UTC(Number(d[3]), MONTHS.indexOf(d[2].toLowerCase()), Number(d[1])) : 0;
   if (d && MONTHS.indexOf(d[2].toLowerCase()) < 0) return NaN;
-  return day + ((Number(t[1]) * 60 + Number(t[2])) * 60 + Number(t[3])) * 1000 + (t[4] ? Number(`0.${t[4]}`) * 1000 : 0);
+  // fraction: ".cc" hundredths (FCS 3.1), ":tt" sixtieths of a second (FCS 3.0)
+  const frac = t[5] ? (t[4] === ':' ? Number(t[5]) / 60 : Number(`0.${t[5]}`)) : 0;
+  return day + ((Number(t[1]) * 60 + Number(t[2])) * 60 + Number(t[3])) * 1000 + frac * 1000;
 }
 
 const flags = (...pairs: [boolean, string][]) =>
@@ -553,10 +558,23 @@ export interface Results {
   notes: string[];
 }
 
+/** The template's top rectangle (single beads) and the bead polygons under it, whatever the rectangle is called. */
+export function templateParts(t: Template | null): { head: TemplateGate | null; beads: TemplateGate[] } {
+  const head = t?.gates.find((g) => g.parent === null && g.kind === 'rect') ?? null;
+  return { head, beads: head ? t!.gates.filter((g) => g.parent === head.name && g.kind === 'polygon') : [] };
+}
+
 /** The bead names in the analysis: the template's bead gates that have a population. */
 export function beadNames(st: MacsplexState): string[] {
-  const t = st.template?.gates.filter((g) => g.parent === SINGLES_NAME).map((g) => g.name) ?? Object.keys(st.beads);
+  const t = st.template ? templateParts(st.template).beads.map((g) => g.name) : Object.keys(st.beads);
   return t.filter((b) => st.beads[b]);
+}
+
+/** Samples that have their own gate (API: sampleGates) for the plugin's singles population or a bead population. */
+function ownGates(fs: PluginContext<MacsplexState>, st: MacsplexState): { singles: Set<string>; beads: Map<string, Set<string>> } {
+  const pops = fs.populations();
+  const of = (id: string | null) => new Set(pops.find((p) => p.id === id)?.sampleGates ?? []);
+  return { singles: of(st.singles), beads: new Map(Object.entries(st.beads).map(([b, id]) => [b, of(id)])) };
 }
 
 export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Results | { error: string } {
@@ -598,15 +616,17 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
     byWell.set(w, s);
   }
   const missing = layout.filter((r) => !byWell.has(r.well)).map((r) => r.well);
-  if (missing.length) return { error: `Layout wells without a loaded sample: ${missing.join(', ')}.` };
+  if (missing.length) return { error: `Layout wells without a sample: ${missing.join(', ')}.` };
   const extra = [...byWell.keys()].filter((w) => !layout.some((r) => r.well === w));
   if (extra.length) return { error: `Samples for wells not in the layout: ${extra.join(', ')}.` };
   const notLoaded = layout.filter((r) => !byWell.get(r.well)!.loaded).map((r) => r.well);
   const lay = new Map(layout.map((r) => [r.well, r]));
   const wellsInOrder = [...byWell.keys()];
+  const own = ownGates(fs, st);
 
   // per well x bead: events, median (fs.stat), CI (fs.events)  (D3, D13)
   const B: BeadRow[] = [];
+  const idx = new Map<string, BeadRow>();
   for (const w of wellsInOrder) {
     const s = byWell.get(w)!;
     const r = lay.get(w)!;
@@ -616,7 +636,7 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
       const med = fs.stat(s.id, pop, 'median', reporter);
       const ev = fs.events(s.id, reporter, pop);
       const ci = ev ? medianCi(ev) : null;
-      B.push({
+      const row: BeadRow = {
         well: w,
         bead: b,
         role: r.role,
@@ -631,17 +651,20 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
         model_B: NaN,
         normalized: NaN,
         flags: '',
-      });
+      };
+      B.push(row);
+      idx.set(`${w}\u0000${b}`, row);
     }
   }
-  const at = (w: string, b: string) => B.find((x) => x.well === w && x.bead === b)!;
+  const at = (w: string, b: string) => idx.get(`${w}\u0000${b}`)!;
+  const failed = (x: BeadRow) => lay.get(x.well)!.failed;
 
-  // D6, D8: blank = mean of the blank group's medians (same bead)
+  // D6, D8: blank = mean of the blank group's medians (same bead); failed blank wells left out (v1.3)
   const blankStats = new Map<string, { mean: number; sd: number; n: number }>();
   const blankGroups = [...new Set(layout.filter((r) => r.role === 'blank').map((r) => r.blank_group))];
   for (const g of blankGroups)
     for (const b of beads) {
-      const v = B.filter((x) => x.role === 'blank' && x.blank_group === g && x.bead === b)
+      const v = B.filter((x) => x.role === 'blank' && x.blank_group === g && x.bead === b && !failed(x))
         .map((x) => x.median)
         .filter(Number.isFinite);
       blankStats.set(`${g}\u0000${b}`, { mean: mean(v), sd: sd1(v), n: v.length });
@@ -653,9 +676,9 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
     if (x.role !== 'blank' && x.blank_group) x.model_A = x.median - x.blank_mean;
   }
 
-  // D7: model B (optional)
+  // D7: model B (optional); failed unstained wells left out of the offsets (v1.3)
   if (st.modelB) {
-    const u = new Map(beads.map((b) => [b, mean(B.filter((x) => x.role === 'unstained' && x.bead === b).map((x) => x.median))]));
+    const u = new Map(beads.map((b) => [b, mean(B.filter((x) => x.role === 'unstained' && x.bead === b && !failed(x)).map((x) => x.median))]));
     for (const w of wellsInOrder) {
       const iso = mean(ISOTYPES.filter((b) => beads.includes(b)).map((b) => at(w, b).median - u.get(b)!));
       for (const b of beads) {
@@ -674,6 +697,7 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
     const tmin = Math.min(...tsp.map((b) => at(w, b).events));
     const ok = tsp.length > 0 && tmin > 0 && tm > 0;
     const f = lay.get(w)!.failed;
+    const sid = byWell.get(w)!.id;
     for (const b of beads) {
       const x = at(w, b);
       const corr = x.role !== 'blank' && !!x.blank_group;
@@ -687,6 +711,7 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
         [corr && !ok, 'norm_not_computed'],
         [corr && ok && tmin > 0 && tmin < L.lowEvents, 'norm_low_events'],
         [f, 'failed_well'],
+        [!!own.beads.get(b)?.has(sid) || own.singles.has(sid), 'own_gate'],
       );
     }
   }
@@ -700,6 +725,7 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
     const singles = fs.count(s.id, st.singles) ?? 0;
     const assigned = beads.reduce((a, b) => a + at(w, b).events, 0);
     const isoNeg = ISOTYPES.some((b) => beads.includes(b) && at(w, b).model_A < 0);
+    const ownAny = own.singles.has(s.id) || beads.some((b) => own.beads.get(b)?.has(s.id));
     return {
       well: w,
       sampleId: s.id,
@@ -718,19 +744,22 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
       flags: flags(
         [!s.loaded, 'not_loaded'],
         [r.failed, 'failed_well'],
+        [!Number.isFinite(vol), 'no_volume'],
         [r.planned_volume_uL !== null && vol < L.earlyStopFraction * r.planned_volume_uL, 'early_stop'],
         [singles < L.lowSingles, 'low_singles'],
         [singles > 0 && assigned / singles < L.lowAssignment, 'low_assignment'],
         [isoNeg, 'negative_isotype'],
+        [ownAny, 'own_gate'],
       ),
     };
   });
+  // acquisition order over the wells with a time; the trend leaves out wells with the role "empty" (v1.3)
   const times = W.map((w) => acquisitionTime(byWell.get(w.well)!.keywords['$DATE'] ?? '', byWell.get(w.well)!.keywords['$BTIM'] ?? ''));
   const timed = W.map((w, i) => [times[i], i] as [number, number])
     .filter(([t]) => Number.isFinite(t))
     .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   timed.forEach(([, i], k) => (W[i].acq_order = k + 1));
-  const withOrder = W.filter((w) => Number.isFinite(w.acq_order));
+  const withOrder = W.filter((w) => Number.isFinite(w.acq_order) && w.role !== 'empty');
   const rho =
     withOrder.length >= 3
       ? spearman(
@@ -739,7 +768,7 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
         )
       : NaN;
 
-  // D10: replicate summary over non-failed wells with events in that bead
+  // D10: replicate summary over non-failed wells with events in that bead; n = the values used (v1.3)
   const S: SummaryRow[] = [];
   const groups = new Map<string, BeadRow[]>();
   for (const x of B) {
@@ -751,8 +780,8 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
   }
   for (const [k, d] of groups) {
     const [g, b] = k.split('\u0000');
-    const n = d.length;
-    const a = d.map((x) => x.model_A);
+    const a = d.map((x) => x.model_A).filter(Number.isFinite);
+    const n = a.length;
     const m = mean(a);
     const sd = n >= 2 ? sd1(a) : NaN;
     const cv = n >= 2 && m !== 0 ? sd / Math.abs(m) : NaN;
@@ -788,19 +817,25 @@ export function analyse(fs: PluginContext<MacsplexState>, st: MacsplexState): Re
       flags: flags([cv > L.blankCv, 'blank_cv'], [v.n < 3, 'blank_n_lt_3']),
     };
   });
-  if (notLoaded.length) notes.push(`Not loaded (FCS file missing): ${notLoaded.join(', ')}; their values and keyword checks are empty.`);
+  if (notLoaded.length) notes.push(`Not loaded (FCS file missing): ${notLoaded.join(', ')}; their values are empty.`);
+  const ownWells = W.filter((w) => w.flags.split(';').includes('own_gate')).map((w) => w.well);
+  if (ownWells.length) notes.push(`Wells with their own gate (against one gate set per plate): ${ownWells.join(', ')}. Use the plate gate again in Gating.`);
 
   const ref = st.reference ? samples.find((s) => s.id === st.reference) : undefined;
   const run: Record<string, string | number> = {
     method_version: METHOD_VERSION,
     plugin_version: fs.plugin.version,
-    gate_source: `${st.mode === 'template' ? 'template gates as they are (validation mode)' : 'template aligned to the beads of the reference well'}; template: ${st.template?.source ?? 'none'}`,
+    gate_source: `${st.gateSource || (st.mode === 'template' ? 'template gates as they are (validation mode)' : 'template aligned to the beads of the reference well')}; template: ${st.template?.source ?? 'none'}`,
     reference_well: ref ? normalizeWell(ref.keywords['$SMNO'] ?? '') || ref.name : '',
     gates_confirmed: st.confirmed && st.confirmed.signature === gateSignature(fs, st) ? st.confirmed.at : '',
     wells: W.length,
     beads: beads.length,
     order_rho: rho,
-    plate_flags: flags([Number.isFinite(rho) && rho < L.orderRho, 'order_trend'], [st.mode === 'template', 'gates_template']),
+    plate_flags: flags(
+      [Number.isFinite(rho) && rho < L.orderRho, 'order_trend'],
+      [st.mode === 'template', 'gates_template'],
+      [ownWells.length > 0, 'own_gate'],
+    ),
     files: W.map((w) => `${w.file} (${w.total_events} events, ${w.start_time})`).join(' | '),
     ...Object.fromEntries(Object.entries(L).map(([k, v]) => [`setting_${k}`, v])),
     setting_reporter: st.reporter,
@@ -829,27 +864,43 @@ const median64 = (v: number[]) => {
   return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
 };
 
+/** Area centroid of a polygon (shoelace); the vertex mean when the area is (nearly) zero. */
+export function polygonCentroid(P: number[][]): [number, number] {
+  let a = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) {
+    const f = P[j][0] * P[i][1] - P[i][0] * P[j][1];
+    a += f;
+    cx += (P[j][0] + P[i][0]) * f;
+    cy += (P[j][1] + P[i][1]) * f;
+  }
+  if (Math.abs(a) < 1e-12) return [P.reduce((s, p) => s + p[0], 0) / P.length, P.reduce((s, p) => s + p[1], 0) / P.length];
+  return [cx / (3 * a), cy / (3 * a)];
+}
+
 /**
- * D2 step 2: move a template polygon onto its bead population without changing its shape. In log10 space (values
- * below 1 count as 1), repeatedly: take the events inside the polygon enlarged by `enlarge` around its centre (vertex
- * mean), and move the polygon so its centre lies on their median position. Deterministic; the Python reference does
- * the same. Returns the moved polygon (raw values) and the total shift in decades.
+ * D2 step 2 (method v1.3): move a template polygon onto its bead population without changing its shape. In log10 space,
+ * repeatedly: take the events inside the polygon enlarged by `enlarge` around its area centroid, and move the polygon
+ * so its centroid lies on their median position. Event values below 1 count as 1. A polygon with a vertex at or below
+ * 1 is not aligned (`refused`), because moving it in log space would distort it. Deterministic; the Python reference
+ * does the same. Returns the moved polygon (raw values) and the total shift in decades.
  */
 export function alignPolygon(
   points: [number, number][],
   ex: Float32Array,
   ey: Float32Array,
   o: AlignOptions = ALIGN,
-): { points: [number, number][]; dx: number; dy: number; n: number } {
+): { points: [number, number][]; dx: number; dy: number; n: number; refused?: string } {
+  if (points.some(([x, y]) => !(x > 1) || !(y > 1))) return { points, dx: 0, dy: 0, n: 0, refused: 'a vertex at or below 1' };
   const lx = Float64Array.from(ex, log10c);
   const ly = Float64Array.from(ey, log10c);
-  let P = points.map(([x, y]) => [log10c(x), log10c(y)]);
+  let P = points.map(([x, y]) => [Math.log10(x), Math.log10(y)]);
   let dx = 0;
   let dy = 0;
   let n = 0;
   for (let it = 0; it < o.iterations; it++) {
-    const cx = P.reduce((a, p) => a + p[0], 0) / P.length;
-    const cy = P.reduce((a, p) => a + p[1], 0) / P.length;
+    const [cx, cy] = polygonCentroid(P);
     const xs = Float64Array.from(P, (p) => cx + o.enlarge * (p[0] - cx));
     const ys = Float64Array.from(P, (p) => cy + o.enlarge * (p[1] - cy));
     const sx: number[] = [];
@@ -873,58 +924,90 @@ export function alignPolygon(
  * Steps 1 and 2: the singles rectangle from the template, then every bead's template polygon, moved onto its bead
  * population in the reference well (mode 'auto', see alignPolygon) or as it is (mode 'template', validation). Gates
  * are evaluated in linear space, exactly as the template. Replaces the plugin's earlier gates; one undo step.
+ * Returns { error } (and changes nothing) when the template, a channel or the reference well is missing; otherwise
+ * notes for single beads that could not be aligned.
  */
-export function createGates(fs: PluginContext<MacsplexState>, st: MacsplexState, referenceId: string): string[] {
-  const t = st.template;
-  if (!t) return ['No template yet.'];
-  const head = t.gates.find((g) => g.parent === null && g.kind === 'rect');
-  if (!head) return ['The template has no singles rectangle at its top.'];
+export function createGates(fs: PluginContext<MacsplexState>, st: MacsplexState, referenceId: string): { error: string } | { notes: string[] } {
+  const { head, beads: tBeads } = templateParts(st.template);
+  if (!st.template || !head) return { error: 'The template has no single-bead rectangle at its top.' };
+  if (!tBeads.length) return { error: `The template has no bead polygons under "${head.name}".` };
+  // everything is checked before the old gates are touched
   const ch = (n: string) => fs.findChannel(n);
+  const hx = ch(head.x);
+  const hy = ch(head.y);
+  const missingCh = [...new Set([head, ...tBeads].flatMap((g) => [g.x, g.y]).filter((c) => !ch(c)))];
+  if (!hx || !hy || missingCh.length) return { error: `Channels not found in the samples: ${missingCh.join(', ')}. No gates were changed.` };
+  const ref = fs.samples().find((s) => s.id === referenceId);
+  if (st.mode === 'auto' && !ref?.loaded)
+    return { error: 'The reference well is not loaded (its FCS file is needed for the alignment). No gates were changed.' };
   const notes: string[] = [];
   return fs.transaction(() => {
     if (st.singles && fs.populations().some((p) => p.id === st.singles)) fs.removePopulation(st.singles);
-    const hx = ch(head.x);
-    const hy = ch(head.y);
-    if (!hx || !hy) return [`Channels ${head.x} / ${head.y} not found.`];
     const xs = head.points.map((p) => p[0]);
     const ys = head.points.map((p) => p[1]);
     const singles = fs.addGate({
-      name: SINGLES_NAME,
+      name: head.name,
       gate: { type: 'rect', x: hx, y: hy, xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: Math.min(...ys), ymax: Math.max(...ys) },
     });
     const beads: Record<string, string> = {};
     const created: Record<string, GateGeom> = {};
-    for (const g of t.gates.filter((x) => x.parent === SINGLES_NAME && x.kind === 'polygon')) {
-      const x = ch(g.x);
-      const y = ch(g.y);
-      if (!x || !y) {
-        notes.push(`${g.name}: channels ${g.x} / ${g.y} not found.`);
-        continue;
-      }
+    const evCache = new Map<string, Float32Array | null>();
+    const ev = (c: string) => {
+      if (!evCache.has(c)) evCache.set(c, fs.events(referenceId, c, singles));
+      return evCache.get(c)!;
+    };
+    for (const g of tBeads) {
+      const x = ch(g.x)!;
+      const y = ch(g.y)!;
       let pts = g.points.map((p) => [p[0], p[1]] as [number, number]);
       if (st.mode === 'auto') {
-        const ex = fs.events(referenceId, x, singles);
-        const ey = fs.events(referenceId, y, singles);
-        if (ex && ey) {
-          const a = alignPolygon(pts, ex, ey);
-          if (a.n >= 3) pts = a.points;
-          else notes.push(`${g.name}: too few events near its template position in the reference well; template position kept.`);
-        }
+        const ex = ev(x);
+        const ey = ev(y);
+        const a = ex && ey ? alignPolygon(pts, ex, ey) : null;
+        if (!a) notes.push(`${g.name}: no events in the reference well; template position kept.`);
+        else if (a.refused) notes.push(`${g.name}: not aligned (${a.refused}); template position kept.`);
+        else if (a.n < 3) notes.push(`${g.name}: too few events near its template position in the reference well; template position kept.`);
+        else pts = a.points;
       }
       const gate: GateGeom = { type: 'polygon', x, y, points: pts, scales: { x: LIN, y: LIN }, strict: true };
       beads[g.name] = fs.addGate({ name: g.name, parent: singles, gate });
       created[g.name] = gate;
     }
-    fs.setState((s) => ({ ...(s ?? DEFAULT_STATE), ...st, singles, beads, created, reference: referenceId, confirmed: null }));
-    return notes;
+    const gateSource = st.mode === 'template' ? 'template gates as they are (validation mode)' : 'template aligned to the beads of the reference well';
+    fs.setState((s) => ({ ...(s ?? DEFAULT_STATE), ...st, singles, beads, created, reference: referenceId, confirmed: null, gateSource }));
+    return { notes };
   });
 }
 
-/** The current gates of the plugin's populations, as one string (D2 step 5: a confirmation holds for these gates). */
+/**
+ * The current gates of the plugin's populations, including every sample's own gate, as one string (D2 step 5: a
+ * confirmation holds for exactly these gates).
+ */
 export function gateSignature(fs: PluginContext<MacsplexState>, st: MacsplexState): string {
   const pops = fs.populations();
   const ids = [st.singles, ...Object.values(st.beads)].filter((x): x is string => !!x);
-  return JSON.stringify(ids.map((id) => pops.find((p) => p.id === id)?.gate ?? null));
+  return JSON.stringify(
+    ids.map((id) => {
+      const p = pops.find((q) => q.id === id);
+      if (!p) return null;
+      return { gate: p.gate, own: [...p.sampleGates].sort().map((s) => [s, fs.gateFor(id, s)]) };
+    }),
+  );
+}
+
+/** Give a sample the plate gates again: removes its own gates of the plugin's populations. One undo step. */
+export function usePlateGates(fs: PluginContext<MacsplexState>, st: MacsplexState, sampleId: string): number {
+  const pops = fs.populations();
+  const ids = [st.singles, ...Object.values(st.beads)].filter((x): x is string => !!x);
+  let k = 0;
+  fs.transaction(() => {
+    for (const id of ids)
+      if (pops.find((p) => p.id === id)?.sampleGates.includes(sampleId)) {
+        fs.clearSampleGate(id, sampleId);
+        k++;
+      }
+  });
+  return k;
 }
 
 export interface GateCheckRow {
@@ -938,66 +1021,94 @@ export interface GateCheckRow {
   all_wells_template_events: number;
   all_wells_events: number;
   corrected: boolean;
+  own_gate_wells: number;
   flags: string;
 }
 
-/** Events and reporter median of the template polygon among a sample's single beads (raw linear space). */
-function templateStats(
-  fs: PluginContext<MacsplexState>,
-  st: MacsplexState,
-  sampleId: string,
-  g: TemplateGate,
-  reporter: string,
-): { n: number; median: number } {
-  const x = fs.findChannel(g.x);
-  const y = fs.findChannel(g.y);
-  const ex = x && fs.events(sampleId, x, st.singles);
-  const ey = y && fs.events(sampleId, y, st.singles);
-  const er = fs.events(sampleId, reporter, st.singles);
-  if (!ex || !ey || !er) return { n: 0, median: NaN };
-  const px = Float64Array.from(g.points.map((p) => p[0]));
-  const py = Float64Array.from(g.points.map((p) => p[1]));
-  const vals: number[] = [];
-  for (let i = 0; i < ex.length; i++) if (pointInPolygon(ex[i], ey[i], px, py)) vals.push(er[i]);
-  const s = finiteSorted(Float32Array.from(vals));
-  return { n: vals.length, median: quantileSorted(s, 0.5) };
+/**
+ * Events and reporter median of every template bead polygon among a sample's single beads (raw linear space). The
+ * events are read once per sample, and the result is cached: it depends only on the template, the sample and its
+ * single-bead gate, not on the bead gates being checked.
+ */
+const tplCache = new WeakMap<Template, Map<string, Map<string, { n: number; median: number }>>>();
+function templateStats(fs: PluginContext<MacsplexState>, st: MacsplexState, sampleId: string, reporter: string): Map<string, { n: number; median: number }> {
+  const t = st.template!;
+  const key = `${sampleId}\u0000${reporter}\u0000${st.singles}\u0000${JSON.stringify(st.singles ? fs.gateFor(st.singles, sampleId) : null)}`;
+  let perT = tplCache.get(t);
+  if (!perT) tplCache.set(t, (perT = new Map()));
+  const hit = perT.get(key);
+  if (hit) return hit;
+  const out = new Map<string, { n: number; median: number }>();
+  const evs = new Map<string, Float32Array | null>();
+  const ev = (c: string | null) => {
+    if (!c) return null;
+    if (!evs.has(c)) evs.set(c, fs.events(sampleId, c, st.singles));
+    return evs.get(c)!;
+  };
+  const er = ev(reporter);
+  for (const g of templateParts(t).beads) {
+    const ex = ev(fs.findChannel(g.x));
+    const ey = ev(fs.findChannel(g.y));
+    if (!ex || !ey || !er) {
+      out.set(g.name, { n: NaN, median: NaN });
+      continue;
+    }
+    const px = Float64Array.from(g.points.map((p) => p[0]));
+    const py = Float64Array.from(g.points.map((p) => p[1]));
+    const vals: number[] = [];
+    for (let i = 0; i < ex.length; i++) if (pointInPolygon(ex[i], ey[i], px, py)) vals.push(er[i]);
+    out.set(g.name, { n: vals.length, median: quantileSorted(finiteSorted(Float32Array.from(vals)), 0.5) });
+  }
+  perT.set(key, out);
+  return out;
 }
 
-/** Step 3: each bead's current gate against its template gate, in the reference well and summed over all wells. */
+/**
+ * Step 3: each bead's current gate against its template gate, in the reference well and summed over all loaded
+ * wells. A missing population, missing events or a non-finite value is a failed check (`gate_check`), never a pass.
+ */
 export function gateCheck(fs: PluginContext<MacsplexState>, st: MacsplexState): GateCheckRow[] {
   const reporter = fs.findChannel(st.reporter);
   const ref = st.reference;
-  if (!reporter || !ref || !st.template || !st.singles) return [];
+  if (!reporter || !ref || !st.template) return [];
   const pops = fs.populations();
+  const singlesOk = !!st.singles && pops.some((p) => p.id === st.singles);
   const loaded = fs.samples().filter((s) => s.loaded);
-  const rel = (a: number, b: number) => (b ? Math.abs(a - b) / Math.abs(b) : a ? Infinity : 0);
-  return st.template.gates
-    .filter((g) => g.parent === SINGLES_NAME && st.beads[g.name])
+  const lim = st.limits.gateCheck;
+  // relative difference; anything not finite counts as a failed check
+  const off = (a: number, b: number) => !Number.isFinite(a) || !Number.isFinite(b) || (b ? Math.abs(a - b) / Math.abs(b) > lim : a !== 0);
+  const rel = (a: number, b: number) => (Number.isFinite(a) && Number.isFinite(b) ? (b ? Math.abs(a - b) / Math.abs(b) : a ? Infinity : 0) : NaN);
+  const refT = singlesOk ? templateStats(fs, st, ref, reporter) : new Map();
+  const allT = new Map<string, number>();
+  if (singlesOk) for (const s of loaded) for (const [b, v] of templateStats(fs, st, s.id, reporter)) allT.set(b, (allT.get(b) ?? 0) + v.n);
+  return templateParts(st.template)
+    .beads.filter((g) => st.beads[g.name])
     .map((g) => {
-      const pop = st.beads[g.name];
-      const t = templateStats(fs, st, ref, g, reporter);
-      const n = fs.count(ref, pop) ?? 0;
-      const med = fs.stat(ref, pop, 'median', reporter);
-      const allT = loaded.reduce((a, s) => a + templateStats(fs, st, s.id, g, reporter).n, 0);
-      const allC = loaded.reduce((a, s) => a + (fs.count(s.id, pop) ?? 0), 0);
-      const cur = pops.find((p) => p.id === pop)?.gate;
-      const corrected = !!cur && JSON.stringify(cur) !== JSON.stringify(st.created[g.name]);
-      const ed = rel(n, t.n);
-      const md = rel(med, t.median);
+      const id = st.beads[g.name];
+      const p = pops.find((q) => q.id === id);
+      const t = refT.get(g.name) ?? { n: NaN, median: NaN };
+      const n = p && singlesOk ? (fs.count(ref, id) ?? NaN) : NaN;
+      const med = p && singlesOk ? fs.stat(ref, id, 'median', reporter) : NaN;
+      const allC = p && singlesOk ? loaded.reduce((a, s) => a + (fs.count(s.id, id) ?? NaN), 0) : NaN;
+      const corrected = !!p && JSON.stringify(p.gate) !== JSON.stringify(st.created[g.name]);
+      const own = p?.sampleGates.length ?? 0;
       return {
         bead: g.name,
         template_events: t.n,
         template_median: t.median,
         events: n,
         median: med,
-        events_diff: ed,
-        median_diff: md,
-        all_wells_template_events: allT,
+        events_diff: rel(n, t.n),
+        median_diff: rel(med, t.median),
+        all_wells_template_events: allT.get(g.name) ?? NaN,
         all_wells_events: allC,
         corrected,
+        own_gate_wells: own,
         flags: flags(
-          [ed > st.limits.gateCheck || md > st.limits.gateCheck || rel(allC, allT) > st.limits.gateCheck, 'gate_check'],
+          [!p || !singlesOk, 'gate_missing'],
+          [off(n, t.n) || off(med, t.median) || off(allC, allT.get(g.name) ?? NaN), 'gate_check'],
           [corrected, 'gate_corrected'],
+          [own > 0, 'own_gate'],
         ),
       };
     });
@@ -1058,5 +1169,6 @@ export const GATE_COLS: (keyof GateCheckRow)[] = [
   'all_wells_template_events',
   'all_wells_events',
   'corrected',
+  'own_gate_wells',
   'flags',
 ];

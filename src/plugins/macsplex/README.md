@@ -1,7 +1,7 @@
 # MACSPlex Exosome plugin
 
 Analysis of the MACSPlex Exosome Kit (human; 37 marker capture beads and 2 isotype control beads) in FlowState,
-following a fixed, versioned method (method specification v1.2, decisions D1 to D14). A Python reference implementation
+following a fixed, versioned method (method specification v1.3, decisions D1 to D14). A Python reference implementation
 of the same method (`macsplex_ref`, kept outside this repository) gives identical numbers on the same gates; the plugin
 was checked against it on synthetic files (tests/macsplex.test.ts, the same hand-computed values as the reference's
 tests) and on real experiments (results not in this repository).
@@ -16,24 +16,31 @@ tests) and on real experiments (results not in this repository).
       JSON);
    2. alignment: each bead's template polygon is moved, without changing its shape, onto its bead population in a
       reference well (default: the sample with the most events): in log10 space, the events inside the polygon
-      enlarged 1.3 times around its centre, polygon centre moved to their median, up to 5 times. Deterministic, so the
+      enlarged 1.3 times around its area centroid, polygon centroid moved to their median, up to 5 times. A polygon
+      with a vertex at or below 1 is not aligned (a note says so). Deterministic, so the
       Python reference reproduces it exactly. All gates are made in one undo step. Validation mode: the template
       polygons as they are. Gates are evaluated in linear space, exactly as the template;
    3. check: per bead, events and reporter median of the current gate against the template gate, in the reference
-      well and over all wells; differences above a limit (default 10%, provisional) are flagged `gate_check`;
+      well and over all wells; differences above a limit (default 10%, provisional), a missing gate or a value that
+      cannot be computed are flagged `gate_check` (and `gate_missing`); the template statistics are read once per
+      well and cached;
    4. review well by well in the plugin's bead plot (click a well in the plate map); a shifted gate is dragged onto its
       bead or aligned again in the shown well. Both change the shared gate, so every well keeps the same gate (flag
       `gate_corrected`);
-   5. confirmation; any later gate change removes it.
+   5. confirmation; any later gate change, including a well's own gate, removes it.
+   A well with its own gate ("Adjust for this sample" in the app, against one gate set per plate) is flagged
+   `own_gate` in the well and bead rows and in the plate map; "Use the plate gate again" removes it
+   (`fs.clearSampleGate`).
 3. **Reporter (D3).** Median of the reporter channel (default R660-APC-A) per bead population and well, from
    `fs.stat` (identical to the Statistics tables).
-4. **Background (D6, D8).** Model A: the median minus the mean of the medians of the well's blank group (same bead).
+4. **Background (D6, D8).** Model A: the median minus the mean of the medians of the well's blank group (same bead);
+   blank wells marked failed are left out.
    Model B (D7, optional, off by default; for PS/PE probes): offsets from unstained wells, then minus the mean of the
-   REA and mIgG1 control beads in the same well.
+   REA and mIgG1 control beads in the same well; failed unstained wells are left out of the offsets.
 5. **Normalization (D9).** Model A divided by the mean model A of CD9, CD63 and CD81 in the same well; not computed
    when one of them has no events or the mean is not positive.
-6. **Replicates (D10).** Mean, SD (n - 1), CV and n of model A per replicate group and bead; only failed wells (empty
-   gate, `failed` in the layout) are left out.
+6. **Replicates (D10).** Mean, SD (n - 1), CV and n of model A per replicate group and bead; n is the number of values
+   used; only failed wells (empty gate, `failed` in the layout) are left out.
 7. **No detection call (D12).** Values are continuous; a value near 0 is not evidence that a marker is absent (the
    beads-only blank does not remove EVs binding non-specifically to capture beads).
 8. **Flags (D4, D5, D11, D14), which never change or remove a value.** Bead: `empty_gate`, `very_low_events` (< 20),
@@ -41,7 +48,9 @@ tests) and on real experiments (results not in this repository).
    `failed_well`. Well: `not_loaded`, `early_stop` (`$VOL` < 95% of the planned volume; `$VOL` in nL),
    `low_singles` (< 10,000), `low_assignment` (< 50% of single beads in a bead gate), `negative_isotype`. Replicate
    group: `n_lt_2`, `replicate_cv` (> 30%). Blank group: `blank_cv` (> 30%), `blank_n_lt_3`. Plate: `order_trend`
-   (Spearman of single beads vs acquisition order from `$DATE` / `$BTIM` below -0.5), `gates_template`. All limits are
+   (Spearman of single beads vs acquisition order from `$DATE` / `$BTIM` below -0.5, wells with the role "empty" left
+   out; `$BTIM` fractions: `.cc` hundredths, `:tt` sixtieths), `gates_template`, `own_gate`. Well: also `no_volume`
+   (no `$VOL`, so `early_stop` cannot be checked) and `own_gate`. All limits are
    adjustable; those marked provisional in the specification are not yet validated.
 9. **Export.** `summary`, `beads`, `wells`, `blanks`, `gates`, `run` as CSV or one Excel workbook; values unrounded.
 
@@ -65,8 +74,6 @@ reproducible outside FlowState.
 ## Known limits
 
 - The alignment corrects shifts up to about a third of a gate's width; a larger shift is corrected by dragging the gate.
-- A gate corrected for one well only cannot be seen by a plugin (API request); the method requires one gate set per
-  plate.
 - The plugin's gates carry linear scales (strict), so they do not depend on the axis scales. A gate edited in
   FlowState's own gating view may get the view's scales; the gate check shows such a change (`gate_corrected`).
 - The .xit and the layout are opened with a plain file input in the plugin's page (the plugin API has no file dialog
